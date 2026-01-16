@@ -1,0 +1,32 @@
+name: Bazel CI
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  bazel-test-all:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Optional: Use an action to set up a specific Bazel version or Bazelisk.
+      # Bazelisk (recommended) ensures the correct version based on your .bazelversion file.
+      - name: Setup Bazelisk
+        uses: bazelbuild/setup-bazelisk@v3
+
+      # Optional: Mount a cache for faster subsequent runs
+      - name: Mount bazel cache
+        uses: actions/cache@v4
+        with:
+          path: "~/.cache/bazel"
+          key: bazel-${{ hashFiles('**/BUILD.bazel', '**/WORKSPACE.bazel', '.bazelversion') }}
+          restore-keys: bazel-
+
+      - name: Run all Bazel tests
+        # The command to run all test targets
+        run: bazel test //...
