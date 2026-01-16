@@ -4,6 +4,7 @@ import (
 	"context"
 
 	repb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
+	"github.com/bazelbuild/remote-apis/build/bazel/semver"
 	"github.com/colinrgodsey/goREgo/pkg/storage"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -68,5 +69,7 @@ func (s *CapabilitiesServer) GetCapabilities(ctx context.Context, req *repb.GetC
 			DigestFunction: repb.DigestFunction_SHA256,
 			ExecEnabled:    false,
 		},
+		LowApiVersion: &semver.SemVer{Major: 2, Minor: 0},
+		HighApiVersion: &semver.SemVer{Major: 2, Minor: 2},
 	}, nil
 }
