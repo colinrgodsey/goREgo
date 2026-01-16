@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"sort"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/colinrgodsey/goREgo/lib/config"
@@ -45,6 +46,7 @@ func (j *Janitor) Run(ctx context.Context) error {
 type fileInfo struct {
 	path string
 	info os.FileInfo
+	atime time.Time
 }
 
 func (j *Janitor) Cleanup() error {
@@ -59,7 +61,11 @@ func (j *Janitor) Cleanup() error {
 			return err
 		}
 		if !info.IsDir() {
-			files = append(files, fileInfo{path: path, info: info})
+			atime := info.ModTime()
+			if stat, ok := info.Sys().(*syscall.Stat_t); ok {
+				atime = time.Unix(stat.Atim.Sec, stat.Atim.Nsec)
+			}
+			files = append(files, fileInfo{path: path, info: info, atime: atime})
 			totalSize += info.Size()
 		}
 		return nil
@@ -72,9 +78,9 @@ func (j *Janitor) Cleanup() error {
 		return nil
 	}
 
-	// Sort by mod time (oldest first)
+	// Sort by atime (oldest first)
 	sort.Slice(files, func(i, k int) bool {
-		return files[i].info.ModTime().Before(files[k].info.ModTime())
+		return files[i].atime.Before(files[k].atime)
 	})
 
 	for _, f := range files {

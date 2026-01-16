@@ -6,67 +6,72 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"time"
 
 	repb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
 	"google.golang.org/protobuf/proto"
 )
 
 type LocalStore struct {
-	rootDir string
+	rootDir          string
+	forceUpdateATime bool
 }
 
-func NewLocalStore(rootDir string) (*LocalStore, error) {
+func NewLocalStore(rootDir string, forceUpdateATime bool) (*LocalStore, error) {
 	if err := os.MkdirAll(filepath.Join(rootDir, "cas"), 0755); err != nil {
 		return nil, err
 	}
 	if err := os.MkdirAll(filepath.Join(rootDir, "ac"), 0755); err != nil {
 		return nil, err
 	}
-	return &LocalStore{rootDir: rootDir}, nil
+	return &LocalStore{
+		rootDir:          rootDir,
+		forceUpdateATime: forceUpdateATime,
+	}, nil
 }
 
 func (s *LocalStore) getBlobPath(digest Digest) string {
-
 	// data/cas/{ab}/{cd}/{digest}
-
 	return filepath.Join(
-
 		s.rootDir,
-
 		"cas",
-
 		digest.Hash[0:2],
-
 		digest.Hash[2:4],
-
 		digest.Hash,
-
 	)
-
 }
-
-
 
 func (s *LocalStore) Has(ctx context.Context, digest Digest) (bool, error) {
-
-	_, err := os.Stat(s.getBlobPath(digest))
-
+	path := s.getBlobPath(digest)
+	_, err := os.Stat(path)
 	if os.IsNotExist(err) {
-
 		return false, nil
-
 	}
-
-	return err == nil, err
-
+	if err != nil {
+		return false, err
+	}
+	
+	if s.forceUpdateATime {
+		now := time.Now()
+		_ = os.Chtimes(path, now, now)
+	}
+	
+	return true, nil
 }
 
-
-
 func (s *LocalStore) Get(ctx context.Context, digest Digest) (io.ReadCloser, error) {
-
-	return os.Open(s.getBlobPath(digest))
-
+	path := s.getBlobPath(digest)
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	
+	if s.forceUpdateATime {
+		now := time.Now()
+		_ = os.Chtimes(path, now, now)
+	}
+	
+	return f, nil
 }
 
 

@@ -5,7 +5,16 @@ go_library(
     srcs = ["main.go"],
     importpath = "github.com/colinrgodsey/goREgo/cmd/gorego",
     visibility = ["//visibility:private"],
-    deps = ["//lib/config"],
+    deps = [
+        "//lib/config",
+        "//lib/janitor",
+        "//lib/proxy",
+        "//lib/server",
+        "//lib/storage",
+        "@com_github_bazelbuild_remote_apis//build/bazel/remote/execution/v2:remote_execution_go_proto",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//reflection",
+    ],
 )
 
 go_binary(
