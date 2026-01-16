@@ -2,3 +2,5 @@ load("@gazelle//:def.bzl", "gazelle")
 
 # gazelle:prefix github.com/colinrgodsey/goREgo
 gazelle(name = "gazelle")
+
+exports_files(["config.yaml"])

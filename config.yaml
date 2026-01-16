@@ -1,0 +1,11 @@
+listen_addr: ":50051"
+local_cache_dir: "data/cache"
+local_cache_max_size_gb: 10
+max_concurrent_actions: 32
+
+backing_cache:
+  target: "localhost:8980"
+
+cluster:
+  join_peers: []
+  gossip_port: 7946
