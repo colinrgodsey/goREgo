@@ -101,6 +101,10 @@ This project uses **Bazel** for building and testing, and **Gazelle** for genera
     * Define interfaces for all external dependencies (Database, API Clients).
     * Generate mocks using `gomock` or `mockery`.
     * Keep unit tests "pure" (no I/O); use integration tests for DB/Network interactions.
+4.  **Insulating Interfaces:** Decouple code from global system state (e.g., `os` package, time, networking) using private interfaces to facilitate hermetic unit testing.
+    * Define a private interface (e.g., `fileSystem`) that abstracts the external calls.
+    * Provide a standard implementation for production and a mock implementation for tests.
+    * Inject the interface via the constructor to allow tests to override it.
 
 ---
 

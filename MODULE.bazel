@@ -3,12 +3,13 @@ module(
     version = "0.0.1",
 )
 
-bazel_dep(name = "rules_go", version = "0.50.1", repo_name = "io_bazel_rules_go")
+bazel_dep(name = "rules_go", repo_name = "io_bazel_rules_go", version = "0.50.1")
 bazel_dep(name = "gazelle", version = "0.39.1")
-bazel_dep(name = "bazel_remote_apis", version = "0.0.0", repo_name = "com_github_bazelbuild_remote_apis")
+bazel_dep(name = "bazel_remote_apis", repo_name = "com_github_bazelbuild_remote_apis", version = "0.0.0")
+
 git_override(
+    commit = "6777112ef7defa6705b1ebd2831d6c7efeb12ba2",
     module_name = "bazel_remote_apis",
-    tag = "v2.11.0-rc2",
     remote = "https://github.com/bazelbuild/remote-apis.git",
 )
 
@@ -16,9 +17,11 @@ bazel_dep(name = "googleapis", version = "0.0.0-20260109-6145b5ff")
 bazel_dep(name = "rules_proto", version = "7.0.2")
 
 go_sdk = use_extension("@io_bazel_rules_go//go:extensions.bzl", "go_sdk")
+
 go_sdk.download(version = "1.24.0")
 
 go_deps = use_extension("@gazelle//:extensions.bzl", "go_deps")
+
 go_deps.from_file(go_mod = "//:go.mod")
 
 # remote-apis has pre-built BUILD files with broken deps - regenerate them cleanly

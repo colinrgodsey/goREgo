@@ -4,5 +4,6 @@
 .bazel
 .buildcache
 
+.idea
 tmp
 test_env
