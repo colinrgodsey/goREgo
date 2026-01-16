@@ -3,14 +3,13 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "janitor",
     srcs = ["janitor.go"],
-    importpath = "github.com/colinrgodsey/goREgo/lib/janitor",
+    importpath = "github.com/colinrgodsey/goREgo/pkg/janitor",
     visibility = ["//:__subpackages__"],
-    deps = ["//lib/config"],
+    deps = ["//pkg/config"],
 )
 
 go_test(
     name = "janitor_test",
     srcs = ["janitor_test.go"],
     embed = [":janitor"],
-    deps = ["//lib/config"],
 )

@@ -9,7 +9,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/colinrgodsey/goREgo/lib/config"
+	"github.com/colinrgodsey/goREgo/pkg/config"
 )
 
 type fileEntry interface {

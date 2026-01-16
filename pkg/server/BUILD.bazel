@@ -3,10 +3,10 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 go_library(
     name = "server",
     srcs = ["server.go"],
-    importpath = "github.com/colinrgodsey/goREgo/lib/server",
+    importpath = "github.com/colinrgodsey/goREgo/pkg/server",
     visibility = ["//visibility:public"],
     deps = [
-        "//lib/storage",
+        "//pkg/storage",
         "@com_github_bazelbuild_remote_apis//build/bazel/remote/execution/v2:remote_execution_go_proto",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//status",

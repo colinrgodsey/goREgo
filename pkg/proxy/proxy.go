@@ -5,7 +5,7 @@ import (
 	"io"
 
 	repb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
-	"github.com/colinrgodsey/goREgo/lib/storage"
+	"github.com/colinrgodsey/goREgo/pkg/storage"
 	"golang.org/x/sync/singleflight"
 )
 

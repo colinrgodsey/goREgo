@@ -10,11 +10,11 @@ import (
 	"syscall"
 
 	repb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
-	"github.com/colinrgodsey/goREgo/lib/config"
-	"github.com/colinrgodsey/goREgo/lib/janitor"
-	"github.com/colinrgodsey/goREgo/lib/proxy"
-	"github.com/colinrgodsey/goREgo/lib/server"
-	"github.com/colinrgodsey/goREgo/lib/storage"
+	"github.com/colinrgodsey/goREgo/pkg/config"
+	"github.com/colinrgodsey/goREgo/pkg/janitor"
+	"github.com/colinrgodsey/goREgo/pkg/proxy"
+	"github.com/colinrgodsey/goREgo/pkg/server"
+	"github.com/colinrgodsey/goREgo/pkg/storage"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
 )
