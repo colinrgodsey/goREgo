@@ -1,0 +1,222 @@
+package storage
+
+import (
+	"context"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+
+	repb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
+	"google.golang.org/protobuf/proto"
+)
+
+type LocalStore struct {
+	rootDir string
+}
+
+func NewLocalStore(rootDir string) (*LocalStore, error) {
+	if err := os.MkdirAll(filepath.Join(rootDir, "cas"), 0755); err != nil {
+		return nil, err
+	}
+	if err := os.MkdirAll(filepath.Join(rootDir, "ac"), 0755); err != nil {
+		return nil, err
+	}
+	return &LocalStore{rootDir: rootDir}, nil
+}
+
+func (s *LocalStore) getBlobPath(digest Digest) string {
+
+	// data/cas/{ab}/{cd}/{digest}
+
+	return filepath.Join(
+
+		s.rootDir,
+
+		"cas",
+
+		digest.Hash[0:2],
+
+		digest.Hash[2:4],
+
+		digest.Hash,
+
+	)
+
+}
+
+
+
+func (s *LocalStore) Has(ctx context.Context, digest Digest) (bool, error) {
+
+	_, err := os.Stat(s.getBlobPath(digest))
+
+	if os.IsNotExist(err) {
+
+		return false, nil
+
+	}
+
+	return err == nil, err
+
+}
+
+
+
+func (s *LocalStore) Get(ctx context.Context, digest Digest) (io.ReadCloser, error) {
+
+	return os.Open(s.getBlobPath(digest))
+
+}
+
+
+
+func (s *LocalStore) getActionPath(digest Digest) string {
+
+	return filepath.Join(
+
+		s.rootDir,
+
+		"ac",
+
+		digest.Hash[0:2],
+
+		digest.Hash[2:4],
+
+		digest.Hash,
+
+	)
+
+}
+
+
+
+func (s *LocalStore) GetActionResult(ctx context.Context, digest Digest) (*repb.ActionResult, error) {
+
+	data, err := os.ReadFile(s.getActionPath(digest))
+
+	if err != nil {
+
+		return nil, err
+
+	}
+
+
+
+	var result repb.ActionResult
+
+	if err := proto.Unmarshal(data, &result); err != nil {
+
+		return nil, err
+
+	}
+
+	return &result, nil
+
+}
+
+
+
+func (s *LocalStore) UpdateActionResult(ctx context.Context, digest Digest, result *repb.ActionResult) error {
+
+	data, err := proto.Marshal(result)
+
+	if err != nil {
+
+		return err
+
+	}
+
+
+
+	path := s.getActionPath(digest)
+
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+
+		return err
+
+	}
+
+
+
+	tmpPath := path + ".tmp"
+
+	if err := os.WriteFile(tmpPath, data, 0644); err != nil {
+
+		return err
+
+	}
+
+
+
+	return os.Rename(tmpPath, path)
+
+}
+
+
+
+func (s *LocalStore) Put(ctx context.Context, digest Digest, data io.Reader) error {
+
+	path := s.getBlobPath(digest)
+
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+
+		return err
+
+	}
+
+
+
+	// Write to temp file first for atomicity
+
+	tmpPath := path + ".tmp"
+
+	f, err := os.Create(tmpPath)
+
+	if err != nil {
+
+		return err
+
+	}
+
+	defer func() {
+
+		f.Close()
+
+		os.Remove(tmpPath) // Cleanup if rename didn't happen
+
+	}()
+
+
+
+	n, err := io.Copy(f, data)
+
+	if err != nil {
+
+		return err
+
+	}
+
+
+
+	if n != digest.Size {
+
+		return fmt.Errorf("digest size mismatch: expected %d, got %d", digest.Size, n)
+
+	}
+
+
+
+	if err := f.Close(); err != nil {
+
+		return err
+
+	}
+
+
+
+	return os.Rename(tmpPath, path)
+
+}
+
+

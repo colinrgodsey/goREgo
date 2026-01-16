@@ -1,0 +1,13 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "proxy",
+    srcs = ["proxy.go"],
+    importpath = "github.com/colinrgodsey/goREgo/lib/proxy",
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//lib/storage",
+        "@com_github_bazelbuild_remote_apis//build/bazel/remote/execution/v2:remote_execution_go_proto",
+        "@org_golang_x_sync//singleflight",
+    ],
+)

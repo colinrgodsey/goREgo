@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/colinrgodsey/goREgo/internal/config"
+	"github.com/colinrgodsey/goREgo/lib/config"
 )
 
 func main() {
