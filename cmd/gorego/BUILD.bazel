@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
 
 go_library(
     name = "gorego_lib",
@@ -14,6 +14,20 @@ go_library(
         "@com_github_bazelbuild_remote_apis//build/bazel/remote/execution/v2:remote_execution_go_proto",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//reflection",
+    ],
+)
+
+go_test(
+    name = "gorego_test",
+    srcs = ["integration_test.go"],
+    embed = [":gorego_lib"],
+    deps = [
+        "//lib/proxy",
+        "//lib/server",
+        "//lib/storage",
+        "@com_github_bazelbuild_remote_apis_sdks//go/pkg/digest",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//credentials/insecure",
     ],
 )
 

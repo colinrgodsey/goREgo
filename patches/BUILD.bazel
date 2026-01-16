@@ -1,1 +1,4 @@
-exports_files(["remote-apis-clean.patch"])
+exports_files([
+    "remote-apis-clean.patch",
+    "remote-apis-fix-build.patch",
+])

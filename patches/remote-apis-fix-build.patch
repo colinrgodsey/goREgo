@@ -1,0 +1,6 @@
+diff --git a/build/bazel/remote/execution/v2/go/BUILD b/build/bazel/remote/execution/v2/go/BUILD
+deleted file mode 100644
+index e69de29..0000000
+diff --git a/build/bazel/semver/go/BUILD b/build/bazel/semver/go/BUILD
+deleted file mode 100644
+index e69de29..0000000

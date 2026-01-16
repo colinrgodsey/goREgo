@@ -5,3 +5,4 @@
 .buildcache
 
 tmp
+test_env
