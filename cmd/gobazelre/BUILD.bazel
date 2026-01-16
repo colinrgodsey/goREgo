@@ -1,0 +1,14 @@
+load("@rules_go//go:def.bzl", "go_binary", "go_library")
+
+go_library(
+    name = "gobazelre_lib",
+    srcs = ["main.go"],
+    importpath = "github.com/colinrgodsey/goREgo/cmd/gobazelre",
+    visibility = ["//visibility:private"],
+)
+
+go_binary(
+    name = "gobazelre",
+    embed = [":gobazelre_lib"],
+    visibility = ["//visibility:public"],
+)
