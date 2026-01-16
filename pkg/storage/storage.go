@@ -4,8 +4,8 @@ import (
 	"context"
 	"io"
 
-	repb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
 	"github.com/bazelbuild/remote-apis-sdks/go/pkg/digest"
+	repb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
 )
 
 // Digest is a wrapper around the SDK Digest.

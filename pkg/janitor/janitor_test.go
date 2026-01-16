@@ -84,7 +84,7 @@ func TestJanitor_Cleanup(t *testing.T) {
 	// Note: Config expects GB, so we need to hack the Janitor struct directly or use a tiny GB fraction if it was float,
 	// but it is int.
 	// So we will instantiate Janitor manually with injected FS and custom maxSize.
-	
+
 	j := &Janitor{
 		rootDir: "/cache",
 		maxSize: 400, // Bytes

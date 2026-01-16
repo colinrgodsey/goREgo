@@ -10,9 +10,9 @@ import (
 )
 
 type ProxyStore struct {
-	local   *storage.LocalStore
-	remote  storage.BlobStore // Tier 2
-	group   singleflight.Group
+	local  *storage.LocalStore
+	remote storage.BlobStore // Tier 2
+	group  singleflight.Group
 }
 
 func NewProxyStore(local *storage.LocalStore, remote storage.BlobStore) *ProxyStore {
@@ -66,38 +66,38 @@ func (p *ProxyStore) Get(ctx context.Context, digest storage.Digest) (io.ReadClo
 
 func (p *ProxyStore) Put(ctx context.Context, digest storage.Digest, data io.Reader) error {
 	// Write-through: Write to remote (authoritative), then local.
-	
+
 	// We need to read the data twice? Or tee it?
 	// If we write to remote, we might consume the reader.
 	// Ideally, we write to a temp file locally, then upload to remote, then commit local?
-	
+
 	// For now, simple approach: Write to local temp, then upload.
 	// But `storage.Put` takes a Reader.
-	
+
 	// Implementation note: The `data` reader is usually a stream from the client.
 	// If we fail to upload to Tier 2, we must fail the request.
-	
+
 	// We can use `p.local.Put` first (which writes to disk), then read it back to upload to remote?
 	// This ensures we have the data.
-	
+
 	if err := p.local.Put(ctx, digest, data); err != nil {
 		return err
 	}
-	
+
 	// Read back
 	rc, err := p.local.Get(ctx, digest)
 	if err != nil {
 		return err
 	}
 	defer rc.Close()
-	
+
 	if err := p.remote.Put(ctx, digest, rc); err != nil {
 		// If remote fails, we technically "have" it locally, but we violate "Tier 2 authoritative".
 		// We should probably delete local?
 		// For now, just return error.
 		return err
 	}
-	
+
 	return nil
 }
 
@@ -108,14 +108,14 @@ func (p *ProxyStore) GetActionResult(ctx context.Context, digest storage.Digest)
 	if err == nil {
 		return res, nil
 	}
-	
+
 	// Fetch from remote
 	// TODO: Add singleflight here too
 	res, err = p.remote.(storage.ActionCache).GetActionResult(ctx, digest)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// Cache locally
 	_ = p.local.UpdateActionResult(ctx, digest, res)
 	return res, nil

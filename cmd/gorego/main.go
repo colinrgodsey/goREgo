@@ -55,26 +55,26 @@ func main() {
 	// For now, we will fail if backing cache is accessed, or we could wrap the local store?
 	// The requirement is "Hard dependency on backing cache".
 	// We will create a stub for now if not configured, or fail.
-	
+
 	// Assuming Tier 2 is another CAS/AC service.
 	// For this phase, lets just implement the gRPC server and wire it to local for testing
 	// if we don't have a backend. But the plan says "Proxy".
 	// Let's assume we might point it to `bazel-remote` or similar.
-	
+
 	var remoteStore storage.BlobStore // This needs to be a gRPC client wrapper
 	// For now, we'll initialize ProxyStore with nil remote and fix it if needed,
 	// or assume the user provides a target.
-	
+
 	// Real implementation would connect to cfg.BackingCache.Target
 	// Since we don't have the client implementation yet, let's defer that
 	// and just use local store directly for the server to verify functionality first,
 	// OR implement a dummy remote.
-	
+
 	// Let's create the ProxyStore.
 	// NOTE: We haven't implemented the gRPC Client for storage.BlobStore yet.
 	// To unblock, we will use the LocalStore as the "Remote" as well if target is empty,
 	// effectively making it a single tier, but exercising the Proxy logic.
-	
+
 	if cfg.BackingCache.Target == "" {
 		log.Println("WARNING: No backing cache configured. Using local store as remote (Passthrough).")
 		remoteStore = localStore
@@ -94,18 +94,18 @@ func main() {
 	}
 
 	grpcServer := grpc.NewServer()
-	
+
 	// Register CAS
 	casServer := server.NewContentAddressableStorageServer(proxyStore)
 	repb.RegisterContentAddressableStorageServer(grpcServer, casServer)
-	
+
 	// Register Capabilities
 	repb.RegisterCapabilitiesServer(grpcServer, server.NewCapabilitiesServer())
 
 	// Register AC
 	// acServer := server.NewActionCacheServer(proxyStore)
 	// repb.RegisterActionCacheServer(grpcServer, acServer)
-	
+
 	// Register Reflection for debugging (grpcurl)
 	reflection.Register(grpcServer)
 

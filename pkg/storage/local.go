@@ -50,12 +50,12 @@ func (s *LocalStore) Has(ctx context.Context, digest Digest) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	
+
 	if s.forceUpdateATime {
 		now := time.Now()
 		_ = os.Chtimes(path, now, now)
 	}
-	
+
 	return true, nil
 }
 
@@ -65,16 +65,14 @@ func (s *LocalStore) Get(ctx context.Context, digest Digest) (io.ReadCloser, err
 	if err != nil {
 		return nil, err
 	}
-	
+
 	if s.forceUpdateATime {
 		now := time.Now()
 		_ = os.Chtimes(path, now, now)
 	}
-	
+
 	return f, nil
 }
-
-
 
 func (s *LocalStore) getActionPath(digest Digest) string {
 
@@ -89,12 +87,9 @@ func (s *LocalStore) getActionPath(digest Digest) string {
 		digest.Hash[2:4],
 
 		digest.Hash,
-
 	)
 
 }
-
-
 
 func (s *LocalStore) GetActionResult(ctx context.Context, digest Digest) (*repb.ActionResult, error) {
 
@@ -105,8 +100,6 @@ func (s *LocalStore) GetActionResult(ctx context.Context, digest Digest) (*repb.
 		return nil, err
 
 	}
-
-
 
 	var result repb.ActionResult
 
@@ -120,8 +113,6 @@ func (s *LocalStore) GetActionResult(ctx context.Context, digest Digest) (*repb.
 
 }
 
-
-
 func (s *LocalStore) UpdateActionResult(ctx context.Context, digest Digest, result *repb.ActionResult) error {
 
 	data, err := proto.Marshal(result)
@@ -132,8 +123,6 @@ func (s *LocalStore) UpdateActionResult(ctx context.Context, digest Digest, resu
 
 	}
 
-
-
 	path := s.getActionPath(digest)
 
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
@@ -141,8 +130,6 @@ func (s *LocalStore) UpdateActionResult(ctx context.Context, digest Digest, resu
 		return err
 
 	}
-
-
 
 	tmpPath := path + ".tmp"
 
@@ -152,13 +139,9 @@ func (s *LocalStore) UpdateActionResult(ctx context.Context, digest Digest, resu
 
 	}
 
-
-
 	return os.Rename(tmpPath, path)
 
 }
-
-
 
 func (s *LocalStore) Put(ctx context.Context, digest Digest, data io.Reader) error {
 
@@ -169,8 +152,6 @@ func (s *LocalStore) Put(ctx context.Context, digest Digest, data io.Reader) err
 		return err
 
 	}
-
-
 
 	// Write to temp file first for atomicity
 
@@ -192,8 +173,6 @@ func (s *LocalStore) Put(ctx context.Context, digest Digest, data io.Reader) err
 
 	}()
 
-
-
 	n, err := io.Copy(f, data)
 
 	if err != nil {
@@ -202,15 +181,11 @@ func (s *LocalStore) Put(ctx context.Context, digest Digest, data io.Reader) err
 
 	}
 
-
-
 	if n != digest.Size {
 
 		return fmt.Errorf("digest size mismatch: expected %d, got %d", digest.Size, n)
 
 	}
-
-
 
 	if err := f.Close(); err != nil {
 
@@ -218,10 +193,6 @@ func (s *LocalStore) Put(ctx context.Context, digest Digest, data io.Reader) err
 
 	}
 
-
-
 	return os.Rename(tmpPath, path)
 
 }
-
-

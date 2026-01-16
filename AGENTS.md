@@ -114,4 +114,4 @@ This project uses **Bazel** for building and testing, and **Gazelle** for genera
     * Wrap errors with context: `fmt.Errorf("failed to process item %s: %w", id, err)`.
     * Don't just return `err`; explain *what* failed.
     * Use error wrapping (`fmt.Errorf`) with public Err types when possible for deep error typing.
-    * As a cleanup step before making a commit, run `go fmt` for the project.
+    * As a cleanup step before making a commit, run `go fmt ./...` and `buildifier -r .` for the project.

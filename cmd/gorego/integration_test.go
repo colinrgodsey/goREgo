@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	repb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
 	"github.com/bazelbuild/remote-apis-sdks/go/pkg/client"
 	"github.com/bazelbuild/remote-apis-sdks/go/pkg/digest"
+	repb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
 	"github.com/colinrgodsey/goREgo/pkg/proxy"
 	"github.com/colinrgodsey/goREgo/pkg/server"
 	"github.com/colinrgodsey/goREgo/pkg/storage"
