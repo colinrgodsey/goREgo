@@ -45,3 +45,28 @@ func (s *ContentAddressableStorageServer) BatchUpdateBlobs(ctx context.Context, 
 func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stream repb.ContentAddressableStorage_GetTreeServer) error {
 	return status.Error(codes.Unimplemented, "GetTree not implemented")
 }
+
+type CapabilitiesServer struct {
+	repb.UnimplementedCapabilitiesServer
+}
+
+func NewCapabilitiesServer() *CapabilitiesServer {
+	return &CapabilitiesServer{}
+}
+
+func (s *CapabilitiesServer) GetCapabilities(ctx context.Context, req *repb.GetCapabilitiesRequest) (*repb.ServerCapabilities, error) {
+	return &repb.ServerCapabilities{
+		CacheCapabilities: &repb.CacheCapabilities{
+			DigestFunctions: []repb.DigestFunction_Value{
+				repb.DigestFunction_SHA256,
+			},
+			ActionCacheUpdateCapabilities: &repb.ActionCacheUpdateCapabilities{
+				UpdateEnabled: true,
+			},
+		},
+		ExecutionCapabilities: &repb.ExecutionCapabilities{
+			DigestFunction: repb.DigestFunction_SHA256,
+			ExecEnabled:    false,
+		},
+	}, nil
+}

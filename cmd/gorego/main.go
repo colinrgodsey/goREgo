@@ -99,6 +99,9 @@ func main() {
 	casServer := server.NewContentAddressableStorageServer(proxyStore)
 	repb.RegisterContentAddressableStorageServer(grpcServer, casServer)
 	
+	// Register Capabilities
+	repb.RegisterCapabilitiesServer(grpcServer, server.NewCapabilitiesServer())
+
 	// Register AC
 	// acServer := server.NewActionCacheServer(proxyStore)
 	// repb.RegisterActionCacheServer(grpcServer, acServer)
