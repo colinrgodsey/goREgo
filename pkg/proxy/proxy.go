@@ -103,40 +103,45 @@ func (p *ProxyStore) Put(ctx context.Context, digest storage.Digest, data io.Rea
 	))
 	defer span.End()
 
-	// Write-through: Write to remote (authoritative), then local.
+	// Write-through: Tee data to both local and remote.
+	// We rely on "Hard Dependency" logic: if either fails, the operation fails.
+	// Since remote is authoritative, we stream to it concurrently.
 
-	// We need to read the data twice? Or tee it?
-	// If we write to remote, we might consume the reader.
-	// Ideally, we write to a temp file locally, then upload to remote, then commit local?
+	pr, pw := io.Pipe()
+	remoteErrChan := make(chan error, 1)
 
-	// For now, simple approach: Write to local temp, then upload.
-	// But `storage.Put` takes a Reader.
+	go func() {
+		// Remote consumes the pipe
+		err := p.remote.Put(ctx, digest, pr)
+		// If remote fails early, close the reader to signal the writer (local put)
+		// If success, this is a no-op as writer already closed
+		_ = pr.CloseWithError(err)
+		remoteErrChan <- err
+	}()
 
-	// Implementation note: The `data` reader is usually a stream from the client.
-	// If we fail to upload to Tier 2, we must fail the request.
+	// Tee data: Read from 'data', write to 'pw' (which goes to remote), return bytes to 'local'
+	tee := io.TeeReader(data, pw)
 
-	// We can use `p.local.Put` first (which writes to disk), then read it back to upload to remote?
-	// This ensures we have the data.
+	// Local consumes the TeeReader
+	localErr := p.local.Put(ctx, digest, tee)
 
-	if err := p.local.Put(ctx, digest, data); err != nil {
-		span.RecordError(err)
-		return err
+	// Close the writer end to signal EOF to remote
+	if localErr != nil {
+		_ = pw.CloseWithError(localErr)
+	} else {
+		_ = pw.Close()
 	}
 
-	// Read back
-	rc, err := p.local.Get(ctx, digest)
-	if err != nil {
-		span.RecordError(err)
-		return err
-	}
-	defer rc.Close()
+	// Wait for remote to finish
+	remoteErr := <-remoteErrChan
 
-	if err := p.remote.Put(ctx, digest, rc); err != nil {
-		span.RecordError(err)
-		// If remote fails, we technically "have" it locally, but we violate "Tier 2 authoritative".
-		// We should probably delete local?
-		// For now, just return error.
-		return err
+	if localErr != nil {
+		span.RecordError(localErr)
+		return localErr
+	}
+	if remoteErr != nil {
+		span.RecordError(remoteErr)
+		return remoteErr
 	}
 
 	return nil
@@ -158,16 +163,27 @@ func (p *ProxyStore) GetActionResult(ctx context.Context, digest storage.Digest)
 	span.SetAttributes(attribute.Bool("cache.hit", false))
 
 	// Fetch from remote
-	// TODO: Add singleflight here too
-	res, err = p.remote.(storage.ActionCache).GetActionResult(ctx, digest)
+	val, err, _ := p.group.Do("ac:"+digest.Hash, func() (interface{}, error) {
+		ctx, span := p.tracer.Start(ctx, "proxy.GetActionResult.RemoteFetch")
+		defer span.End()
+
+		res, err := p.remote.(storage.ActionCache).GetActionResult(ctx, digest)
+		if err != nil {
+			span.RecordError(err)
+			return nil, err
+		}
+
+		// Cache locally
+		_ = p.local.UpdateActionResult(ctx, digest, res)
+		return res, nil
+	})
+
 	if err != nil {
 		span.RecordError(err)
 		return nil, err
 	}
 
-	// Cache locally
-	_ = p.local.UpdateActionResult(ctx, digest, res)
-	return res, nil
+	return val.(*repb.ActionResult), nil
 }
 
 func (p *ProxyStore) UpdateActionResult(ctx context.Context, digest storage.Digest, result *repb.ActionResult) error {

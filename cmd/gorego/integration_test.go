@@ -19,14 +19,20 @@ import (
 
 func TestIntegration_CAS(t *testing.T) {
 	// 1. Setup Server
-	tempDir := t.TempDir()
-	localStore, err := storage.NewLocalStore(tempDir, false)
+	tempDir1 := t.TempDir()
+	tempDir2 := t.TempDir()
+	
+	localStore1, err := storage.NewLocalStore(tempDir1, false)
 	if err != nil {
-		t.Fatalf("Failed to create local store: %v", err)
+		t.Fatalf("Failed to create local store 1: %v", err)
+	}
+	localStore2, err := storage.NewLocalStore(tempDir2, false)
+	if err != nil {
+		t.Fatalf("Failed to create local store 2: %v", err)
 	}
 
-	// Use local store as both tiers for now (Passthrough mode)
-	proxyStore := proxy.NewProxyStore(localStore, localStore)
+	// Use two tiers
+	proxyStore := proxy.NewProxyStore(localStore1, localStore2)
 	casServer := server.NewContentAddressableStorageServer(proxyStore)
 
 	// Start listener on random port
@@ -77,7 +83,7 @@ func TestIntegration_CAS(t *testing.T) {
 	}
 
 	// B. Put blob directly in store (simulating an upload)
-	err = localStore.Put(ctx, blobDigest, bytes.NewReader(blobContent))
+	err = localStore1.Put(ctx, blobDigest, bytes.NewReader(blobContent))
 	if err != nil {
 		t.Fatalf("Put failed: %v", err)
 	}
@@ -128,5 +134,27 @@ func TestIntegration_CAS(t *testing.T) {
 	}
 	if len(missing) != 0 {
 		t.Errorf("Expected 0 missing blobs after batch update, got %d", len(missing))
+	}
+
+	// G. Action Cache
+	actionDigest := digest.NewFromBlob([]byte("Action 1"))
+	actionResult := &repb.ActionResult{ExitCode: 123}
+	if _, err := c.UpdateActionResult(ctx, &repb.UpdateActionResultRequest{
+		InstanceName: "test-instance",
+		ActionDigest: actionDigest.ToProto(),
+		ActionResult: actionResult,
+	}); err != nil {
+		t.Fatalf("UpdateActionResult failed: %v", err)
+	}
+
+	gotResult, err := c.GetActionResult(ctx, &repb.GetActionResultRequest{
+		InstanceName: "test-instance",
+		ActionDigest: actionDigest.ToProto(),
+	})
+	if err != nil {
+		t.Fatalf("GetActionResult failed: %v", err)
+	}
+	if gotResult.ExitCode != 123 {
+		t.Errorf("ActionResult mismatch. Want 123, got %d", gotResult.ExitCode)
 	}
 }
