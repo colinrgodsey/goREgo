@@ -7,11 +7,10 @@ import (
 )
 
 type Config struct {
-	ListenAddr           string `mapstructure:"listen_addr"`
-	LocalCacheDir        string `mapstructure:"local_cache_dir"`
-	LocalCacheMaxSizeGB  int    `mapstructure:"local_cache_max_size_gb"`
-	MaxConcurrentActions int    `mapstructure:"max_concurrent_actions"`
-	ForceUpdateATime     bool   `mapstructure:"force_update_atime"`
+	ListenAddr          string `mapstructure:"listen_addr"`
+	LocalCacheDir       string `mapstructure:"local_cache_dir"`
+	LocalCacheMaxSizeGB int    `mapstructure:"local_cache_max_size_gb"`
+	ForceUpdateATime    bool   `mapstructure:"force_update_atime"`
 
 	BackingCache BackingCacheConfig `mapstructure:"backing_cache"`
 }
@@ -32,7 +31,6 @@ func LoadConfig(configPath string) (*Config, error) {
 	v.SetDefault("listen_addr", ":50051")
 	v.SetDefault("local_cache_dir", "/var/lib/gorego/cache")
 	v.SetDefault("local_cache_max_size_gb", 100)
-	v.SetDefault("max_concurrent_actions", 32)
 	v.SetDefault("cluster.gossip_port", 7946)
 	v.SetDefault("force_update_atime", false)
 

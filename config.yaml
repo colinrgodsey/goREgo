@@ -1,7 +1,7 @@
 listen_addr: ":50051"
 local_cache_dir: "/tmp/gorego-cache"
-local_cache_max_size_gb: 10
-max_concurrent_actions: 32
+local_cache_max_size_gb: 100
+force_update_atime: false
 backing_cache:
   target: "" # Leave empty for now to use local-only mode (testing)
 cluster:
