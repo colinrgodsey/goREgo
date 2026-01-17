@@ -167,6 +167,16 @@ func (w *WorkerPool) execute(ctx context.Context, task *scheduler.Task) (*repb.A
 		return nil, fmt.Errorf("failed to stage inputs: %w", err)
 	}
 
+	// 5.5 Create output directories
+	for _, outputFile := range command.OutputFiles {
+		// Output files are relative to the working directory (which is inside workDir)
+		path := filepath.Join(workDir, command.WorkingDirectory, outputFile)
+		dir := filepath.Dir(path)
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return nil, fmt.Errorf("failed to create output parent dir %s: %w", dir, err)
+		}
+	}
+
 	// 6. Execute command
 	execResult, err := w.runCommand(ctx, workDir, command, action.Timeout)
 	if err != nil {
