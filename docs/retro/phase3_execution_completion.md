@@ -110,6 +110,24 @@ bazel build //path/to/target \
 - `github.com/google/uuid`: Operation ID generation
 - `cloud.google.com/go/longrunning`: Operations service protos
 
+## Post-Release Debugging & Fixes
+
+### Output Directory Creation & OutputPaths Support
+During initial integration testing with Bazel, we encountered errors where executed commands failed because output directories (or parent directories of output files) did not exist.
+
+#### Issue 1: Missing Parent Directories
+Commands like `gcc` and `cp` expect target directories to exist. The worker was originally only staging inputs but not pre-creating output directories.
+**Fix**: Added logic to `WorkerPool.execute` to iterate through `Command.OutputFiles` and `Command.OutputDirectories` and create all necessary parent directories using `os.MkdirAll`.
+
+#### Issue 2: REAPI v2.1+ `OutputPaths`
+After fixing the initial issue, we observed that `OutputFiles` and `OutputDirectories` were empty in the debug logs, yet commands still failed with "No such file or directory". This indicated the client was using the newer `OutputPaths` field (introduced in REAPI v2.1), which supersedes the separate file/directory fields.
+**Fix**:
+1.  **Execution Setup**: Updated `WorkerPool.execute` to also iterate through `Command.OutputPaths` and create parent directories for all entries.
+2.  **Output Collection**: Updated `WorkerPool.uploadOutputs` to handle `OutputPaths`. Since `OutputPaths` does not distinguish between files and directories, the worker now dynamically `Stat`s each path after execution:
+    -   If it's a directory, it's processed as an output directory (Tree proto construction).
+    -   If it's a file, it's processed as an output file.
+    -   If it doesn't exist, it's ignored (optional outputs).
+
 ## Next Steps (Phase 4)
 - **Clustering**: Implement `hashicorp/memberlist` peer-to-peer mesh
 - **Distributed Scheduling**: Load-aware task distribution
