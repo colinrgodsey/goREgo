@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"flag"
-	"log"
 	"log/slog"
 	"net"
 	"net/http"
@@ -55,7 +54,8 @@ func main() {
 
 	cfg, err := config.LoadConfig(*configPath)
 	if err != nil {
-		log.Fatalf("failed to load config: %v", err)
+		slog.Error("failed to load config", "error", err)
+		os.Exit(1)
 	}
 
 	// Configure structured logging
@@ -78,12 +78,13 @@ func main() {
 		TracingEndpoint: cfg.Telemetry.TracingEndpoint,
 	})
 	if err != nil {
-		log.Fatalf("failed to setup telemetry: %v", err)
+		slog.Error("failed to setup telemetry", "error", err)
+		os.Exit(1)
 	}
 	defer func() {
 		// Shutdown telemetry last
 		if err := shutdownTelemetry(context.Background()); err != nil {
-			log.Printf("telemetry shutdown failed: %v", err)
+			slog.Error("telemetry shutdown failed", "error", err)
 		}
 	}()
 
@@ -104,7 +105,7 @@ func main() {
 	}
 
 	g.Go(func() error {
-		log.Printf("Serving metrics and pprof on %s", cfg.Telemetry.MetricsAddr)
+		slog.Info("Serving metrics and pprof", "addr", cfg.Telemetry.MetricsAddr)
 		if err := metricsServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			return err
 		}
@@ -121,7 +122,8 @@ func main() {
 	// 1. Storage (Local Tier 1)
 	localStore, err := storage.NewLocalStore(cfg.LocalCacheDir, cfg.ForceUpdateATime)
 	if err != nil {
-		log.Fatalf("failed to initialize local store: %v", err)
+		slog.Error("failed to initialize local store", "error", err)
+		os.Exit(1)
 	}
 
 	// 2. Janitor
@@ -138,14 +140,15 @@ func main() {
 	// 3. Remote Storage (Tier 2 - Optional/Placeholder for now)
 	var remoteStore storage.BlobStore
 	if cfg.BackingCache.Target == "" {
-		log.Println("WARNING: No backing cache configured. Using local store as remote (Passthrough).")
+		slog.Warn("No backing cache configured. Using local store as remote (Passthrough).")
 		remoteStore = localStore
 	} else {
-		log.Printf("Connecting to backing cache at %s", cfg.BackingCache.Target)
+		slog.Info("Connecting to backing cache", "target", cfg.BackingCache.Target)
 		var err error
 		remoteStore, err = storage.NewRemoteStore(ctx, cfg.BackingCache.Target)
 		if err != nil {
-			log.Fatalf("failed to connect to backing cache: %v", err)
+			slog.Error("failed to connect to backing cache", "error", err)
+			os.Exit(1)
 		}
 	}
 
@@ -172,13 +175,14 @@ func main() {
 			return nil
 		})
 
-		log.Printf("Execution enabled with concurrency=%d, build_root=%s", cfg.Execution.Concurrency, cfg.Execution.BuildRoot)
+		slog.Info("Execution enabled", "concurrency", cfg.Execution.Concurrency, "build_root", cfg.Execution.BuildRoot)
 	}
 
 	// 4. gRPC Server
 	lis, err := net.Listen("tcp", cfg.ListenAddr)
 	if err != nil {
-		log.Fatalf("failed to listen: %v", err)
+		slog.Error("failed to listen", "error", err)
+		os.Exit(1)
 	}
 
 	grpcServer := grpc.NewServer(
@@ -214,7 +218,7 @@ func main() {
 	reflection.Register(grpcServer)
 
 	g.Go(func() error {
-		log.Printf("Listening on %s", cfg.ListenAddr)
+		slog.Info("gRPC server listening", "addr", cfg.ListenAddr)
 		return grpcServer.Serve(lis)
 	})
 
@@ -224,7 +228,7 @@ func main() {
 
 	select {
 	case <-sigChan:
-		log.Println("Shutting down...")
+		slog.Info("Shutting down...")
 		// 1. Mark unhealthy
 		healthServer.SetServingStatus("", grpc_health_v1.HealthCheckResponse_NOT_SERVING)
 
@@ -239,7 +243,7 @@ func main() {
 
 	if err := g.Wait(); err != nil {
 		if !errors.Is(err, context.Canceled) {
-			log.Printf("Server error: %v", err)
+			slog.Error("Server error", "error", err)
 		}
 	}
 }
