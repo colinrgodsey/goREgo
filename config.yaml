@@ -1,8 +1,49 @@
+# goREgo Configuration
+# All values shown are defaults unless otherwise noted
+
+# Server address to listen on
 listen_addr: ":50051"
-local_cache_dir: "/tmp/gorego-cache"
+
+# Local cache directory for CAS and AC storage
+local_cache_dir: "/tmp/gorego/cache"
+
+# Maximum size of local cache in GB
 local_cache_max_size_gb: 100
+
+# Force update access time on reads (needed for noatime filesystems for LRU eviction)
 force_update_atime: false
+
+# Log level: debug, info, warn, error
+log_level: "warn"
+
+# Backing cache (Tier 2) configuration
 backing_cache:
-  target: "" # Leave empty for now to use local-only mode (testing)
+  # gRPC target for remote cache (e.g., "grpc://remote-cache:50051")
+  # Leave empty to use local-only mode
+  target: ""
+
+# Telemetry configuration
+telemetry:
+  # Address to serve Prometheus metrics and pprof endpoints
+  metrics_addr: ":9090"
+  # OpenTelemetry tracing endpoint (e.g., "localhost:4317")
+  # Leave empty to disable tracing export
+  tracing_endpoint: ""
+
+# Execution configuration (remote execution worker)
+execution:
+  # Enable execution service
+  enabled: true
+  # Number of concurrent workers (0 = runtime.NumCPU())
+  concurrency: 0
+  # Directory for build sandboxes
+  build_root: "/tmp/gorego/builds"
+  # Maximum number of pending tasks in queue
+  queue_size: 1000
+
+# Cluster configuration (for future Phase 4)
 cluster:
+  # Port for gossip protocol (memberlist)
   gossip_port: 7946
+  # Peer addresses to join (e.g., ["node1:7946", "node2:7946"])
+  join_peers: []

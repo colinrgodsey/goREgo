@@ -3,6 +3,8 @@ package proxy
 import (
 	"context"
 	"io"
+	"log/slog"
+	"os"
 
 	repb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
 	"github.com/colinrgodsey/goREgo/pkg/storage"
@@ -13,17 +15,30 @@ import (
 )
 
 type ProxyStore struct {
-	local  *storage.LocalStore
-	remote storage.BlobStore // Tier 2
-	group  singleflight.Group
-	tracer trace.Tracer
+	local     *storage.LocalStore
+	remote    storage.BlobStore // Tier 2
+	localOnly bool              // true when remote == local (no backing cache)
+	group     singleflight.Group
+	tracer    trace.Tracer
+	logger    *slog.Logger
 }
 
 func NewProxyStore(local *storage.LocalStore, remote storage.BlobStore) *ProxyStore {
+	// Detect if we're in local-only mode (no backing cache)
+	localOnly := false
+	if remote == nil {
+		remote = local
+		localOnly = true
+	} else if l, ok := remote.(*storage.LocalStore); ok && l == local {
+		localOnly = true
+	}
+
 	return &ProxyStore{
-		local:  local,
-		remote: remote,
-		tracer: otel.Tracer("gorego/pkg/proxy"),
+		local:     local,
+		remote:    remote,
+		localOnly: localOnly,
+		tracer:    otel.Tracer("gorego/pkg/proxy"),
+		logger:    slog.Default().With("component", "proxy"),
 	}
 }
 
@@ -43,8 +58,14 @@ func (p *ProxyStore) Has(ctx context.Context, digest storage.Digest) (bool, erro
 		span.SetAttributes(attribute.Bool("cache.hit", true))
 		return true, nil
 	}
-	// Check remote? Usually Has() is for FindMissingBlobs.
-	// We should check remote if local misses.
+
+	// Local-only mode: no remote to check
+	if p.localOnly {
+		span.SetAttributes(attribute.Bool("cache.hit", false))
+		return false, nil
+	}
+
+	// Check remote for FindMissingBlobs
 	found, err := p.remote.Has(ctx, digest)
 	span.SetAttributes(attribute.Bool("cache.hit", false), attribute.Bool("remote.found", found))
 	if err != nil {
@@ -66,6 +87,11 @@ func (p *ProxyStore) Get(ctx context.Context, digest storage.Digest) (io.ReadClo
 		return p.local.Get(ctx, digest)
 	}
 	span.SetAttributes(attribute.Bool("cache.hit", false))
+
+	// Local-only mode: blob not found
+	if p.localOnly {
+		return nil, os.ErrNotExist
+	}
 
 	// 2. Singleflight fetch from remote
 	_, err, _ := p.group.Do(digest.Hash, func() (interface{}, error) {
@@ -100,8 +126,24 @@ func (p *ProxyStore) Put(ctx context.Context, digest storage.Digest, data io.Rea
 	ctx, span := p.tracer.Start(ctx, "proxy.Put", trace.WithAttributes(
 		attribute.String("digest.hash", digest.Hash),
 		attribute.Int64("digest.size", digest.Size),
+		attribute.Bool("local_only", p.localOnly),
 	))
 	defer span.End()
+
+	p.logger.Debug("put starting", "hash", digest.Hash, "size", digest.Size, "local_only", p.localOnly)
+
+	// Local-only mode: use TeeReader with io.Discard as null consumer
+	// This ensures the tee logic is always exercised for consistent behavior
+	if p.localOnly {
+		tee := io.TeeReader(data, io.Discard)
+		if err := p.local.Put(ctx, digest, tee); err != nil {
+			p.logger.Error("local put failed", "hash", digest.Hash, "size", digest.Size, "error", err)
+			span.RecordError(err)
+			return err
+		}
+		p.logger.Debug("put complete", "hash", digest.Hash, "size", digest.Size)
+		return nil
+	}
 
 	// Write-through: Tee data to both local and remote.
 	// We rely on "Hard Dependency" logic: if either fails, the operation fails.
@@ -136,14 +178,17 @@ func (p *ProxyStore) Put(ctx context.Context, digest storage.Digest, data io.Rea
 	remoteErr := <-remoteErrChan
 
 	if localErr != nil {
+		p.logger.Error("local put failed", "hash", digest.Hash, "size", digest.Size, "error", localErr)
 		span.RecordError(localErr)
 		return localErr
 	}
 	if remoteErr != nil {
+		p.logger.Error("remote put failed", "hash", digest.Hash, "size", digest.Size, "error", remoteErr)
 		span.RecordError(remoteErr)
 		return remoteErr
 	}
 
+	p.logger.Debug("put complete", "hash", digest.Hash, "size", digest.Size)
 	return nil
 }
 

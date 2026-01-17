@@ -11,6 +11,7 @@ type Config struct {
 	LocalCacheDir       string `mapstructure:"local_cache_dir"`
 	LocalCacheMaxSizeGB int    `mapstructure:"local_cache_max_size_gb"`
 	ForceUpdateATime    bool   `mapstructure:"force_update_atime"`
+	LogLevel            string `mapstructure:"log_level"`
 
 	BackingCache BackingCacheConfig `mapstructure:"backing_cache"`
 	Telemetry    TelemetryConfig    `mapstructure:"telemetry"`
@@ -43,12 +44,13 @@ func LoadConfig(configPath string) (*Config, error) {
 
 	// Defaults
 	v.SetDefault("listen_addr", ":50051")
-	v.SetDefault("local_cache_dir", "/var/lib/gorego/cache")
+	v.SetDefault("local_cache_dir", "/tmp/gorego/cache")
 	v.SetDefault("local_cache_max_size_gb", 100)
 	v.SetDefault("cluster.gossip_port", 7946)
 	v.SetDefault("force_update_atime", false)
+	v.SetDefault("log_level", "warn")
 	v.SetDefault("telemetry.metrics_addr", ":9090")
-	v.SetDefault("execution.enabled", false)
+	v.SetDefault("execution.enabled", true)
 	v.SetDefault("execution.concurrency", 0)
 	v.SetDefault("execution.build_root", "/tmp/gorego/builds")
 	v.SetDefault("execution.queue_size", 1000)

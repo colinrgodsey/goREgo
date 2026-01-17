@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"io"
+	"log/slog"
 	"os"
 	"regexp"
 	"strconv"
@@ -15,11 +16,15 @@ import (
 
 type ByteStreamServer struct {
 	bytestream.UnimplementedByteStreamServer
-	Store storage.BlobStore
+	Store  storage.BlobStore
+	logger *slog.Logger
 }
 
 func NewByteStreamServer(store storage.BlobStore) *ByteStreamServer {
-	return &ByteStreamServer{Store: store}
+	return &ByteStreamServer{
+		Store:  store,
+		logger: slog.Default().With("component", "bytestream"),
+	}
 }
 
 var (
@@ -53,14 +58,17 @@ func parseResourceName(name string, isWrite bool) (storage.Digest, error) {
 func (s *ByteStreamServer) Read(req *bytestream.ReadRequest, stream bytestream.ByteStream_ReadServer) error {
 	dg, err := parseResourceName(req.ResourceName, false)
 	if err != nil {
+		s.logger.Error("failed to parse resource name for read", "resource", req.ResourceName, "error", err)
 		return err
 	}
 
 	rc, err := s.Store.Get(stream.Context(), dg)
 	if err != nil {
 		if os.IsNotExist(err) {
+			s.logger.Debug("blob not found", "hash", dg.Hash, "size", dg.Size)
 			return status.Errorf(codes.NotFound, "blob not found: %v", dg)
 		}
+		s.logger.Error("failed to get blob", "hash", dg.Hash, "size", dg.Size, "error", err)
 		return status.Errorf(codes.Internal, "failed to get blob: %v", err)
 	}
 	defer rc.Close()
@@ -113,6 +121,7 @@ func (s *ByteStreamServer) Write(stream bytestream.ByteStream_WriteServer) error
 	var dg storage.Digest
 	var initialized bool
 	var totalWritten int64
+	var resourceName string
 
 	pr, pw := io.Pipe()
 	errChan := make(chan error, 1)
@@ -128,18 +137,23 @@ func (s *ByteStreamServer) Write(stream bytestream.ByteStream_WriteServer) error
 			break
 		}
 		if err != nil {
+			s.logger.Error("failed to receive write request", "error", err)
 			return err
 		}
 
 		if !initialized {
 			if req.ResourceName == "" {
+				s.logger.Error("missing resource name in first message")
 				return status.Error(codes.InvalidArgument, "missing resource name in first message")
 			}
+			resourceName = req.ResourceName
 			dg, err = parseResourceName(req.ResourceName, true)
 			if err != nil {
+				s.logger.Error("failed to parse resource name for write", "resource", req.ResourceName, "error", err)
 				return err
 			}
 			initialized = true
+			s.logger.Debug("starting write", "hash", dg.Hash, "size", dg.Size)
 
 			// Start the Put operation in background now that we have the digest
 			go func() {
@@ -150,6 +164,7 @@ func (s *ByteStreamServer) Write(stream bytestream.ByteStream_WriteServer) error
 		if len(req.Data) > 0 {
 			n, err := pw.Write(req.Data)
 			if err != nil {
+				s.logger.Error("pipe write failed", "hash", dg.Hash, "size", dg.Size, "error", err)
 				return status.Errorf(codes.Internal, "pipe write failed: %v", err)
 			}
 			totalWritten += int64(n)
@@ -163,18 +178,22 @@ func (s *ByteStreamServer) Write(stream bytestream.ByteStream_WriteServer) error
 	pw.Close()
 
 	if !initialized {
+		s.logger.Error("never received resource name")
 		return status.Error(codes.InvalidArgument, "never received resource name")
 	}
 
 	select {
 	case err := <-errChan:
 		if err != nil {
+			s.logger.Error("store put failed", "hash", dg.Hash, "size", dg.Size, "written", totalWritten, "resource", resourceName, "error", err)
 			return status.Errorf(codes.Internal, "store put failed: %v", err)
 		}
 	case <-stream.Context().Done():
+		s.logger.Error("context cancelled during write", "hash", dg.Hash, "size", dg.Size, "error", stream.Context().Err())
 		return stream.Context().Err()
 	}
 
+	s.logger.Debug("write complete", "hash", dg.Hash, "size", dg.Size, "written", totalWritten)
 	return stream.SendAndClose(&bytestream.WriteResponse{
 		CommittedSize: totalWritten,
 	})

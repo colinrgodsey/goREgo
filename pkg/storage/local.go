@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"time"
@@ -15,6 +16,7 @@ import (
 type LocalStore struct {
 	rootDir          string
 	forceUpdateATime bool
+	logger           *slog.Logger
 }
 
 func NewLocalStore(rootDir string, forceUpdateATime bool) (*LocalStore, error) {
@@ -27,6 +29,7 @@ func NewLocalStore(rootDir string, forceUpdateATime bool) (*LocalStore, error) {
 	return &LocalStore{
 		rootDir:          rootDir,
 		forceUpdateATime: forceUpdateATime,
+		logger:           slog.Default().With("component", "localstore"),
 	}, nil
 }
 
@@ -131,18 +134,16 @@ func (s *LocalStore) UpdateActionResult(ctx context.Context, digest Digest, resu
 func (s *LocalStore) Put(ctx context.Context, digest Digest, data io.Reader) error {
 	path := s.getBlobPath(digest)
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
-
-		return err
-
+		s.logger.Error("failed to create directory", "path", filepath.Dir(path), "error", err)
+		return fmt.Errorf("failed to create directory: %w", err)
 	}
 
 	// Write to temp file first for atomicity
 	tmpPath := path + ".tmp"
 	f, err := os.Create(tmpPath)
 	if err != nil {
-
-		return err
-
+		s.logger.Error("failed to create temp file", "path", tmpPath, "error", err)
+		return fmt.Errorf("failed to create temp file: %w", err)
 	}
 
 	defer func() {
@@ -152,21 +153,23 @@ func (s *LocalStore) Put(ctx context.Context, digest Digest, data io.Reader) err
 
 	n, err := io.Copy(f, data)
 	if err != nil {
-
-		return err
-
+		s.logger.Error("failed to write data", "hash", digest.Hash, "size", digest.Size, "written", n, "error", err)
+		return fmt.Errorf("failed to write data: %w", err)
 	}
 	if n != digest.Size {
-
+		s.logger.Error("digest size mismatch", "hash", digest.Hash, "expected", digest.Size, "got", n)
 		return fmt.Errorf("digest size mismatch: expected %d, got %d", digest.Size, n)
-
 	}
 
 	if err := f.Close(); err != nil {
-
-		return err
-
+		s.logger.Error("failed to close temp file", "path", tmpPath, "error", err)
+		return fmt.Errorf("failed to close temp file: %w", err)
 	}
 
-	return os.Rename(tmpPath, path)
+	if err := os.Rename(tmpPath, path); err != nil {
+		s.logger.Error("failed to rename temp file", "from", tmpPath, "to", path, "error", err)
+		return fmt.Errorf("failed to rename temp file: %w", err)
+	}
+
+	return nil
 }
