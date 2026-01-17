@@ -167,10 +167,30 @@ func (w *WorkerPool) execute(ctx context.Context, task *scheduler.Task) (*repb.A
 		return nil, fmt.Errorf("failed to stage inputs: %w", err)
 	}
 
+	w.logger.Debug("Creating output directories",
+		"output_files", command.OutputFiles,
+		"output_directories", command.OutputDirectories,
+		"output_paths", command.OutputPaths)
+
 	// 5.5 Create output directories
 	for _, outputFile := range command.OutputFiles {
 		// Output files are relative to the working directory (which is inside workDir)
 		path := filepath.Join(workDir, command.WorkingDirectory, outputFile)
+		dir := filepath.Dir(path)
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return nil, fmt.Errorf("failed to create output parent dir %s: %w", dir, err)
+		}
+	}
+
+	for _, outputDir := range command.OutputDirectories {
+		path := filepath.Join(workDir, command.WorkingDirectory, outputDir)
+		if err := os.MkdirAll(path, 0755); err != nil {
+			return nil, fmt.Errorf("failed to create output dir %s: %w", path, err)
+		}
+	}
+
+	for _, outputPath := range command.OutputPaths {
+		path := filepath.Join(workDir, command.WorkingDirectory, outputPath)
 		dir := filepath.Dir(path)
 		if err := os.MkdirAll(dir, 0755); err != nil {
 			return nil, fmt.Errorf("failed to create output parent dir %s: %w", dir, err)
@@ -482,6 +502,59 @@ func (w *WorkerPool) uploadOutputs(ctx context.Context, workDir string, command 
 			TreeDigest:          treeDigest.ToProto(),
 			RootDirectoryDigest: rootDigest.ToProto(),
 		})
+	}
+
+	// Upload output paths (files or directories)
+	for _, outputPath := range command.OutputPaths {
+		fullPath := filepath.Join(workDir, command.WorkingDirectory, outputPath)
+		info, err := os.Stat(fullPath)
+		if os.IsNotExist(err) {
+			continue // Output not produced
+		}
+		if err != nil {
+			return nil, fmt.Errorf("failed to stat output %s: %w", outputPath, err)
+		}
+
+		if info.IsDir() {
+			// Handle as directory
+			tree, rootDigest, err := w.buildTree(ctx, fullPath)
+			if err != nil {
+				return nil, fmt.Errorf("failed to build tree for %s: %w", outputPath, err)
+			}
+
+			// Upload the Tree proto
+			treeData, err := proto.Marshal(tree)
+			if err != nil {
+				return nil, err
+			}
+			treeDigest, err := w.uploadBlob(ctx, treeData)
+			if err != nil {
+				return nil, fmt.Errorf("failed to upload tree for %s: %w", outputPath, err)
+			}
+
+			result.OutputDirectories = append(result.OutputDirectories, &repb.OutputDirectory{
+				Path:                outputPath,
+				TreeDigest:          treeDigest.ToProto(),
+				RootDirectoryDigest: rootDigest.ToProto(),
+			})
+		} else {
+			// Handle as file
+			data, err := os.ReadFile(fullPath)
+			if err != nil {
+				return nil, fmt.Errorf("failed to read output %s: %w", outputPath, err)
+			}
+
+			d, err := w.uploadBlob(ctx, data)
+			if err != nil {
+				return nil, fmt.Errorf("failed to upload output %s: %w", outputPath, err)
+			}
+
+			result.OutputFiles = append(result.OutputFiles, &repb.OutputFile{
+				Path:         outputPath,
+				Digest:       d.ToProto(),
+				IsExecutable: info.Mode()&0111 != 0,
+			})
+		}
 	}
 
 	return result, nil
