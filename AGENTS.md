@@ -123,3 +123,19 @@ Maintain project documentation in the `docs/` directory using the following stru
 *   **`docs/research/`**: Long-form research documents and architectural explorations used to inform future plans.
 *   **`docs/plan/`**: Concrete planning documents for upcoming features or refactoring work.
 *   **`docs/retro/`**: Post-completion documentation summarizing the work done, integration notes, and lessons learned from a completed plan.
+
+---
+
+## 8. Codebase Map (Package Structure)
+
+The core logic resides in `pkg/`. Here is the breakdown of responsibilities:
+
+*   **`pkg/config`**: Centralized configuration management using `viper`. Handles YAML loading, environment variable overrides, and validation.
+*   **`pkg/digest`**: Utilities for calculating and validating content digests (SHA256) and digest-related types.
+*   **`pkg/janitor`**: Background worker responsible for enforcing disk usage limits. It monitors cache size and performs LRU eviction based on file access times.
+*   **`pkg/proxy`**: The caching logic layer. Implements the "Read-Through" and "Write-Through" strategies, coordinating between the `LocalStore` and the authoritative `BackingCache`. Includes `singleflight` for request deduplication.
+*   **`pkg/server`**: gRPC service implementations. Contains the handlers for REAPI services (`ContentAddressableStorage`, `ActionCache`, `ByteStream`, `Capabilities`) and health checks.
+*   **`pkg/storage`**:
+    *   **`LocalStore`**: Disk-based storage engine for the local cache.
+    *   **`RemoteStore`**: Client adapter for communicating with the external backing cache (Tier 2).
+*   **`pkg/telemetry`**: Observability initialization. Sets up Prometheus metrics, OpenTelemetry tracing exporters, and structured logging.
