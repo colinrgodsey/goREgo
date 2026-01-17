@@ -357,6 +357,8 @@ func (w *WorkerPool) runCommand(ctx context.Context, workDir string, command *re
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
+	w.logger.Debug("Executing command", "dir", cmd.Dir, "args", cmd.Args)
+
 	start := time.Now()
 	err := cmd.Run()
 	duration := time.Since(start)
