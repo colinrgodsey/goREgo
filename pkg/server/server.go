@@ -69,7 +69,7 @@ func (s *CapabilitiesServer) GetCapabilities(ctx context.Context, req *repb.GetC
 			DigestFunction: repb.DigestFunction_SHA256,
 			ExecEnabled:    false,
 		},
-		LowApiVersion: &semver.SemVer{Major: 2, Minor: 0},
+		LowApiVersion:  &semver.SemVer{Major: 2, Minor: 0},
 		HighApiVersion: &semver.SemVer{Major: 2, Minor: 2},
 	}, nil
 }

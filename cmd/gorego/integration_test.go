@@ -13,6 +13,7 @@ import (
 	"github.com/colinrgodsey/goREgo/pkg/proxy"
 	"github.com/colinrgodsey/goREgo/pkg/server"
 	"github.com/colinrgodsey/goREgo/pkg/storage"
+	"google.golang.org/genproto/googleapis/bytestream"
 	"google.golang.org/grpc"
 )
 
@@ -38,6 +39,8 @@ func TestIntegration_CAS(t *testing.T) {
 	grpcServer := grpc.NewServer()
 	repb.RegisterContentAddressableStorageServer(grpcServer, casServer)
 	repb.RegisterCapabilitiesServer(grpcServer, server.NewCapabilitiesServer())
+	bytestream.RegisterByteStreamServer(grpcServer, server.NewByteStreamServer(proxyStore))
+	repb.RegisterActionCacheServer(grpcServer, server.NewActionCacheServer(proxyStore))
 
 	// Start server in background
 	go func() {
@@ -86,5 +89,22 @@ func TestIntegration_CAS(t *testing.T) {
 	}
 	if len(missing) != 0 {
 		t.Errorf("Expected 0 missing blobs, got %d", len(missing))
+	}
+
+	// D. ByteStream Write
+	blob2Content := []byte("ByteStream data")
+	_, err = c.WriteBlob(ctx, blob2Content)
+	if err != nil {
+		t.Fatalf("ByteStream Write failed: %v", err)
+	}
+
+	// E. ByteStream Read
+	blob2Digest := digest.NewFromBlob(blob2Content)
+	readContent, _, err := c.ReadBlob(ctx, blob2Digest)
+	if err != nil {
+		t.Fatalf("ByteStream Read failed: %v", err)
+	}
+	if !bytes.Equal(blob2Content, readContent) {
+		t.Errorf("Read content mismatch. Expected %q, got %q", string(blob2Content), string(readContent))
 	}
 }

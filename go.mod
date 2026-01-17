@@ -7,6 +7,7 @@ require (
 	github.com/bazelbuild/remote-apis-sdks v0.0.0-20251202150838-a01d8dc79d0d
 	github.com/spf13/viper v1.21.0
 	golang.org/x/sync v0.19.0
+	google.golang.org/genproto/googleapis/bytestream v0.0.0-20260114163908-3f89685c29c3
 	google.golang.org/grpc v1.78.0
 	google.golang.org/protobuf v1.36.11
 )
@@ -35,7 +36,6 @@ require (
 	golang.org/x/text v0.31.0 // indirect
 	google.golang.org/genproto v0.0.0-20230803162519-f966b187b2e5 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20251029180050-ab9386a59fda // indirect
-	google.golang.org/genproto/googleapis/bytestream v0.0.0-20260114163908-3f89685c29c3 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20251029180050-ab9386a59fda // indirect
 	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c // indirect
 )

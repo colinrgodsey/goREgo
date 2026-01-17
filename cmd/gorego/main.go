@@ -15,6 +15,7 @@ import (
 	"github.com/colinrgodsey/goREgo/pkg/proxy"
 	"github.com/colinrgodsey/goREgo/pkg/server"
 	"github.com/colinrgodsey/goREgo/pkg/storage"
+	"google.golang.org/genproto/googleapis/bytestream"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
 )
@@ -102,9 +103,11 @@ func main() {
 	// Register Capabilities
 	repb.RegisterCapabilitiesServer(grpcServer, server.NewCapabilitiesServer())
 
+	// Register ByteStream
+	bytestream.RegisterByteStreamServer(grpcServer, server.NewByteStreamServer(proxyStore))
+
 	// Register AC
-	// acServer := server.NewActionCacheServer(proxyStore)
-	// repb.RegisterActionCacheServer(grpcServer, acServer)
+	repb.RegisterActionCacheServer(grpcServer, server.NewActionCacheServer(proxyStore))
 
 	// Register Reflection for debugging (grpcurl)
 	reflection.Register(grpcServer)
