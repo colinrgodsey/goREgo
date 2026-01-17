@@ -13,10 +13,13 @@ import (
 	"syscall"
 	"time"
 
+	longrunning "cloud.google.com/go/longrunning/autogen/longrunningpb"
 	repb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
 	"github.com/colinrgodsey/goREgo/pkg/config"
+	"github.com/colinrgodsey/goREgo/pkg/execution"
 	"github.com/colinrgodsey/goREgo/pkg/janitor"
 	"github.com/colinrgodsey/goREgo/pkg/proxy"
+	"github.com/colinrgodsey/goREgo/pkg/scheduler"
 	"github.com/colinrgodsey/goREgo/pkg/server"
 	"github.com/colinrgodsey/goREgo/pkg/storage"
 	"github.com/colinrgodsey/goREgo/pkg/telemetry"
@@ -63,7 +66,7 @@ func main() {
 	// Start Metrics & pprof Server
 	metricsMux := http.NewServeMux()
 	metricsMux.Handle("/metrics", promhttp.HandlerFor(reg, promhttp.HandlerOpts{Registry: reg}))
-	
+
 	// pprof handlers
 	metricsMux.HandleFunc("/debug/pprof/", pprof.Index)
 	metricsMux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
@@ -124,6 +127,30 @@ func main() {
 
 	proxyStore := proxy.NewProxyStore(localStore, remoteStore)
 
+	// 3.5 Scheduler and Execution (if enabled)
+	var sched *scheduler.Scheduler
+	if cfg.Execution.Enabled {
+		sched = scheduler.NewScheduler(cfg.Execution.QueueSize)
+
+		// Start scheduler cleanup goroutine
+		g.Go(func() error {
+			return sched.Run(ctx)
+		})
+
+		// Start worker pool
+		workerPool := execution.NewWorkerPool(cfg.Execution, sched, proxyStore, proxyStore)
+		g.Go(func() error {
+			if err := workerPool.Run(ctx); err != nil {
+				if !errors.Is(err, context.Canceled) {
+					return err
+				}
+			}
+			return nil
+		})
+
+		log.Printf("Execution enabled with concurrency=%d, build_root=%s", cfg.Execution.Concurrency, cfg.Execution.BuildRoot)
+	}
+
 	// 4. gRPC Server
 	lis, err := net.Listen("tcp", cfg.ListenAddr)
 	if err != nil {
@@ -139,13 +166,19 @@ func main() {
 	repb.RegisterContentAddressableStorageServer(grpcServer, casServer)
 
 	// Register Capabilities
-	repb.RegisterCapabilitiesServer(grpcServer, server.NewCapabilitiesServer())
+	repb.RegisterCapabilitiesServer(grpcServer, server.NewCapabilitiesServer(cfg.Execution.Enabled))
 
 	// Register ByteStream
 	bytestream.RegisterByteStreamServer(grpcServer, server.NewByteStreamServer(proxyStore))
 
 	// Register AC
 	repb.RegisterActionCacheServer(grpcServer, server.NewActionCacheServer(proxyStore))
+
+	// Register Execution and Operations (if enabled)
+	if cfg.Execution.Enabled && sched != nil {
+		repb.RegisterExecutionServer(grpcServer, server.NewExecutionServer(sched, proxyStore))
+		longrunning.RegisterOperationsServer(grpcServer, server.NewOperationsServer(sched))
+	}
 
 	// Register Health
 	healthServer := health.NewServer()
@@ -164,16 +197,16 @@ func main() {
 	// Graceful shutdown
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
-	
+
 	select {
 	case <-sigChan:
 		log.Println("Shutting down...")
 		// 1. Mark unhealthy
 		healthServer.SetServingStatus("", grpc_health_v1.HealthCheckResponse_NOT_SERVING)
-		
+
 		// 2. Stop gRPC (blocks)
 		grpcServer.GracefulStop()
-		
+
 		// 3. Stop other background tasks
 		cancel()
 	case <-ctx.Done():

@@ -21,7 +21,7 @@ func TestIntegration_CAS(t *testing.T) {
 	// 1. Setup Server
 	tempDir1 := t.TempDir()
 	tempDir2 := t.TempDir()
-	
+
 	localStore1, err := storage.NewLocalStore(tempDir1, false)
 	if err != nil {
 		t.Fatalf("Failed to create local store 1: %v", err)
@@ -44,7 +44,7 @@ func TestIntegration_CAS(t *testing.T) {
 
 	grpcServer := grpc.NewServer()
 	repb.RegisterContentAddressableStorageServer(grpcServer, casServer)
-	repb.RegisterCapabilitiesServer(grpcServer, server.NewCapabilitiesServer())
+	repb.RegisterCapabilitiesServer(grpcServer, server.NewCapabilitiesServer(false))
 	bytestream.RegisterByteStreamServer(grpcServer, server.NewByteStreamServer(proxyStore))
 	repb.RegisterActionCacheServer(grpcServer, server.NewActionCacheServer(proxyStore))
 

@@ -70,6 +70,4 @@ bazel run //cmd/gorego -- --config config.yaml
 
 ## Next Steps (Phase 2)
 - **Observability:** Implement Prometheus metrics and OpenTelemetry tracing.
-- **Cluster Mesh:** Implement the `hashicorp/memberlist` based peer-to-peer mesh.
-- **Distributed Scheduling:** Implement the load-aware scheduling logic.
 - **Execution:** Implement the actual command execution logic (via `os/exec` inside the "BYO-Environment").

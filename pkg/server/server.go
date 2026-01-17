@@ -74,10 +74,11 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 
 type CapabilitiesServer struct {
 	repb.UnimplementedCapabilitiesServer
+	execEnabled bool
 }
 
-func NewCapabilitiesServer() *CapabilitiesServer {
-	return &CapabilitiesServer{}
+func NewCapabilitiesServer(execEnabled bool) *CapabilitiesServer {
+	return &CapabilitiesServer{execEnabled: execEnabled}
 }
 
 func (s *CapabilitiesServer) GetCapabilities(ctx context.Context, req *repb.GetCapabilitiesRequest) (*repb.ServerCapabilities, error) {
@@ -93,7 +94,7 @@ func (s *CapabilitiesServer) GetCapabilities(ctx context.Context, req *repb.GetC
 		},
 		ExecutionCapabilities: &repb.ExecutionCapabilities{
 			DigestFunction: repb.DigestFunction_SHA256,
-			ExecEnabled:    false,
+			ExecEnabled:    s.execEnabled,
 		},
 		LowApiVersion:  &semver.SemVer{Major: 2, Minor: 0},
 		HighApiVersion: &semver.SemVer{Major: 2, Minor: 2},

@@ -14,6 +14,14 @@ type Config struct {
 
 	BackingCache BackingCacheConfig `mapstructure:"backing_cache"`
 	Telemetry    TelemetryConfig    `mapstructure:"telemetry"`
+	Execution    ExecutionConfig    `mapstructure:"execution"`
+}
+
+type ExecutionConfig struct {
+	Enabled     bool   `mapstructure:"enabled"`
+	Concurrency int    `mapstructure:"concurrency"` // 0 = runtime.NumCPU()
+	BuildRoot   string `mapstructure:"build_root"`
+	QueueSize   int    `mapstructure:"queue_size"`
 }
 
 type BackingCacheConfig struct {
@@ -40,6 +48,10 @@ func LoadConfig(configPath string) (*Config, error) {
 	v.SetDefault("cluster.gossip_port", 7946)
 	v.SetDefault("force_update_atime", false)
 	v.SetDefault("telemetry.metrics_addr", ":9090")
+	v.SetDefault("execution.enabled", false)
+	v.SetDefault("execution.concurrency", 0)
+	v.SetDefault("execution.build_root", "/tmp/gorego/builds")
+	v.SetDefault("execution.queue_size", 1000)
 
 	// Env overrides
 	v.SetEnvPrefix("GOREGO")
