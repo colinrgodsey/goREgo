@@ -33,7 +33,7 @@ func NewLocalStore(rootDir string, forceUpdateATime bool) (*LocalStore, error) {
 	}, nil
 }
 
-func (s *LocalStore) getBlobPath(digest Digest) string {
+func (s *LocalStore) BlobPath(digest Digest) (string, error) {
 	// data/cas/{ab}/{cd}/{digest}
 	return filepath.Join(
 		s.rootDir,
@@ -41,11 +41,11 @@ func (s *LocalStore) getBlobPath(digest Digest) string {
 		digest.Hash[0:2],
 		digest.Hash[2:4],
 		digest.Hash,
-	)
+	), nil
 }
 
 func (s *LocalStore) Has(ctx context.Context, digest Digest) (bool, error) {
-	path := s.getBlobPath(digest)
+	path, _ := s.BlobPath(digest)
 	_, err := os.Stat(path)
 	if os.IsNotExist(err) {
 		return false, nil
@@ -63,7 +63,7 @@ func (s *LocalStore) Has(ctx context.Context, digest Digest) (bool, error) {
 }
 
 func (s *LocalStore) Get(ctx context.Context, digest Digest) (io.ReadCloser, error) {
-	path := s.getBlobPath(digest)
+	path, _ := s.BlobPath(digest)
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
@@ -78,7 +78,6 @@ func (s *LocalStore) Get(ctx context.Context, digest Digest) (io.ReadCloser, err
 }
 
 func (s *LocalStore) getActionPath(digest Digest) string {
-
 	return filepath.Join(
 		s.rootDir,
 		"ac",
@@ -86,22 +85,17 @@ func (s *LocalStore) getActionPath(digest Digest) string {
 		digest.Hash[2:4],
 		digest.Hash,
 	)
-
 }
 
 func (s *LocalStore) GetActionResult(ctx context.Context, digest Digest) (*repb.ActionResult, error) {
 	data, err := os.ReadFile(s.getActionPath(digest))
 	if err != nil {
-
 		return nil, err
-
 	}
 
 	var result repb.ActionResult
 	if err := proto.Unmarshal(data, &result); err != nil {
-
 		return nil, err
-
 	}
 	return &result, nil
 }
@@ -109,30 +103,24 @@ func (s *LocalStore) GetActionResult(ctx context.Context, digest Digest) (*repb.
 func (s *LocalStore) UpdateActionResult(ctx context.Context, digest Digest, result *repb.ActionResult) error {
 	data, err := proto.Marshal(result)
 	if err != nil {
-
 		return err
-
 	}
 
 	path := s.getActionPath(digest)
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
-
 		return err
-
 	}
 
 	tmpPath := path + ".tmp"
 	if err := os.WriteFile(tmpPath, data, 0644); err != nil {
-
 		return err
-
 	}
 
 	return os.Rename(tmpPath, path)
 }
 
 func (s *LocalStore) Put(ctx context.Context, digest Digest, data io.Reader) error {
-	path := s.getBlobPath(digest)
+	path, _ := s.BlobPath(digest)
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		s.logger.Error("failed to create directory", "path", filepath.Dir(path), "error", err)
 		return fmt.Errorf("failed to create directory: %w", err)

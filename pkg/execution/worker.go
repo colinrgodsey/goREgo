@@ -328,6 +328,43 @@ func (w *WorkerPool) stageDirectory(ctx context.Context, targetDir string, dirDi
 }
 
 func (w *WorkerPool) stageFile(ctx context.Context, targetPath string, d digest.Digest, executable bool) error {
+	if lbs, ok := w.blobStore.(storage.LocalBlobStore); ok {
+		// Ensure it's local. Get will fetch it if using ProxyStore.
+		rc, err := w.blobStore.Get(ctx, d)
+		if err != nil {
+			return err
+		}
+		rc.Close()
+
+		path, err := lbs.BlobPath(d)
+		if err != nil {
+			return err
+		}
+
+		if executable {
+			// Ensure the CAS file is executable.
+			// This is a bit of a side effect, but it's necessary for linking to work
+			// and preserve executable permissions on the hard link source.
+			info, err := os.Stat(path)
+			if err != nil {
+				return err
+			}
+			if info.Mode()&0111 == 0 {
+				// Add executable bit to user, group, and others
+				if err := os.Chmod(path, info.Mode()|0111); err != nil {
+					return fmt.Errorf("failed to chmod CAS file %s: %w", path, err)
+				}
+			}
+		}
+
+		// Try hard linking first
+		if err := os.Link(path, targetPath); err == nil {
+			return nil
+		}
+
+		w.logger.Warn("failed to hardlink, falling back to copy", "src", path, "dst", targetPath, "error", err)
+	}
+
 	rc, err := w.blobStore.Get(ctx, d)
 	if err != nil {
 		return err

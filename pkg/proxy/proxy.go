@@ -42,6 +42,10 @@ func NewProxyStore(local *storage.LocalStore, remote storage.BlobStore) *ProxySt
 	}
 }
 
+func (p *ProxyStore) BlobPath(digest storage.Digest) (string, error) {
+	return p.local.BlobPath(digest)
+}
+
 func (p *ProxyStore) Has(ctx context.Context, digest storage.Digest) (bool, error) {
 	ctx, span := p.tracer.Start(ctx, "proxy.Has", trace.WithAttributes(
 		attribute.String("digest.hash", digest.Hash),

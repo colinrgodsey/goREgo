@@ -24,7 +24,10 @@ go_library(
 
 go_test(
     name = "execution_test",
-    srcs = ["worker_test.go"],
+    srcs = [
+        "hardlink_test.go",
+        "worker_test.go",
+    ],
     embed = [":execution"],
     deps = [
         "//pkg/config",

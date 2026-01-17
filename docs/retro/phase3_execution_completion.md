@@ -103,7 +103,6 @@ bazel build //path/to/target \
 
 ### Limitations (Accepted for Phase 3)
 - **No sandbox isolation**: Uses raw `os/exec`, not hermetic
-- **File copying**: Inputs are copied (not hardlinked) for safety
 - **Single-node only**: No distributed execution yet
 
 ## Dependencies Added
@@ -127,6 +126,12 @@ After fixing the initial issue, we observed that `OutputFiles` and `OutputDirect
     -   If it's a directory, it's processed as an output directory (Tree proto construction).
     -   If it's a file, it's processed as an output file.
     -   If it doesn't exist, it's ignored (optional outputs).
+
+### Input Materialization Optimization
+To improve performance and reduce disk I/O, the input staging mechanism was optimized to use **hard links** (`os.Link`) instead of full file copies when the local CAS is available.
+- **Mechanism**: The worker checks if the underlying blob store is a `LocalBlobStore`. If so, it attempts to hard-link the cached CAS blob to the execution sandbox.
+- **Fallback**: If hard-linking fails (e.g., cross-device link), the worker gracefully falls back to copying the file.
+- **Safety**: To support this, we ensure that executable bits are set correctly on the CAS blobs if required by the action, while maintaining the immutable nature of the content (hard links share the underlying inode).
 
 ## Next Steps (Phase 4)
 - **Clustering**: Implement `hashicorp/memberlist` peer-to-peer mesh

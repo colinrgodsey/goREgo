@@ -22,6 +22,12 @@ type BlobStore interface {
 	Put(ctx context.Context, digest Digest, data io.Reader) error
 }
 
+// LocalBlobStore is an optional interface for BlobStores that are backed by a local filesystem.
+type LocalBlobStore interface {
+	BlobStore
+	BlobPath(digest Digest) (string, error)
+}
+
 // ActionCache defines the interface for the Action Cache (AC).
 type ActionCache interface {
 	GetActionResult(ctx context.Context, digest Digest) (*repb.ActionResult, error)
