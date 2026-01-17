@@ -2,12 +2,16 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"log"
 	"net"
+	"net/http"
+	"net/http/pprof"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	repb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
 	"github.com/colinrgodsey/goREgo/pkg/config"
@@ -15,8 +19,13 @@ import (
 	"github.com/colinrgodsey/goREgo/pkg/proxy"
 	"github.com/colinrgodsey/goREgo/pkg/server"
 	"github.com/colinrgodsey/goREgo/pkg/storage"
+	"github.com/colinrgodsey/goREgo/pkg/telemetry"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"golang.org/x/sync/errgroup"
 	"google.golang.org/genproto/googleapis/bytestream"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/health"
+	"google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/reflection"
 )
 
@@ -34,6 +43,54 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	g, ctx := errgroup.WithContext(ctx)
+
+	// 0. Telemetry
+	reg, shutdownTelemetry, err := telemetry.Setup(ctx, telemetry.Config{
+		MetricsAddr:     cfg.Telemetry.MetricsAddr,
+		TracingEndpoint: cfg.Telemetry.TracingEndpoint,
+	})
+	if err != nil {
+		log.Fatalf("failed to setup telemetry: %v", err)
+	}
+	defer func() {
+		// Shutdown telemetry last
+		if err := shutdownTelemetry(context.Background()); err != nil {
+			log.Printf("telemetry shutdown failed: %v", err)
+		}
+	}()
+
+	// Start Metrics & pprof Server
+	metricsMux := http.NewServeMux()
+	metricsMux.Handle("/metrics", promhttp.HandlerFor(reg, promhttp.HandlerOpts{Registry: reg}))
+	
+	// pprof handlers
+	metricsMux.HandleFunc("/debug/pprof/", pprof.Index)
+	metricsMux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
+	metricsMux.HandleFunc("/debug/pprof/profile", pprof.Profile)
+	metricsMux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
+	metricsMux.HandleFunc("/debug/pprof/trace", pprof.Trace)
+
+	metricsServer := &http.Server{
+		Addr:    cfg.Telemetry.MetricsAddr,
+		Handler: metricsMux,
+	}
+
+	g.Go(func() error {
+		log.Printf("Serving metrics and pprof on %s", cfg.Telemetry.MetricsAddr)
+		if err := metricsServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			return err
+		}
+		return nil
+	})
+
+	g.Go(func() error {
+		<-ctx.Done()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		return metricsServer.Shutdown(shutdownCtx)
+	})
+
 	// 1. Storage (Local Tier 1)
 	localStore, err := storage.NewLocalStore(cfg.LocalCacheDir, cfg.ForceUpdateATime)
 	if err != nil {
@@ -42,40 +99,17 @@ func main() {
 
 	// 2. Janitor
 	janitor := janitor.NewJanitor(cfg)
-	go func() {
+	g.Go(func() error {
 		if err := janitor.Run(ctx); err != nil {
-			log.Printf("janitor stopped: %v", err)
+			if !errors.Is(err, context.Canceled) {
+				return err
+			}
 		}
-	}()
+		return nil
+	})
 
 	// 3. Remote Storage (Tier 2 - Optional/Placeholder for now)
-	// For Phase 1, if no backing cache is configured, we can just use the local store
-	// effectively acting as a single-tier cache, or we could stub it.
-	// The ProxyStore requires a remote store.
-	// TODO: Implement a proper gRPC client for the backing cache.
-	// For now, we will fail if backing cache is accessed, or we could wrap the local store?
-	// The requirement is "Hard dependency on backing cache".
-	// We will create a stub for now if not configured, or fail.
-
-	// Assuming Tier 2 is another CAS/AC service.
-	// For this phase, lets just implement the gRPC server and wire it to local for testing
-	// if we don't have a backend. But the plan says "Proxy".
-	// Let's assume we might point it to `bazel-remote` or similar.
-
-	var remoteStore storage.BlobStore // This needs to be a gRPC client wrapper
-	// For now, we'll initialize ProxyStore with nil remote and fix it if needed,
-	// or assume the user provides a target.
-
-	// Real implementation would connect to cfg.BackingCache.Target
-	// Since we don't have the client implementation yet, let's defer that
-	// and just use local store directly for the server to verify functionality first,
-	// OR implement a dummy remote.
-
-	// Let's create the ProxyStore.
-	// NOTE: We haven't implemented the gRPC Client for storage.BlobStore yet.
-	// To unblock, we will use the LocalStore as the "Remote" as well if target is empty,
-	// effectively making it a single tier, but exercising the Proxy logic.
-
+	var remoteStore storage.BlobStore
 	if cfg.BackingCache.Target == "" {
 		log.Println("WARNING: No backing cache configured. Using local store as remote (Passthrough).")
 		remoteStore = localStore
@@ -96,7 +130,9 @@ func main() {
 		log.Fatalf("failed to listen: %v", err)
 	}
 
-	grpcServer := grpc.NewServer()
+	grpcServer := grpc.NewServer(
+		telemetry.NewServerHandler(),
+	)
 
 	// Register CAS
 	casServer := server.NewContentAddressableStorageServer(proxyStore)
@@ -111,21 +147,42 @@ func main() {
 	// Register AC
 	repb.RegisterActionCacheServer(grpcServer, server.NewActionCacheServer(proxyStore))
 
+	// Register Health
+	healthServer := health.NewServer()
+	grpc_health_v1.RegisterHealthServer(grpcServer, healthServer)
+	// Mark as serving
+	healthServer.SetServingStatus("", grpc_health_v1.HealthCheckResponse_SERVING)
+
 	// Register Reflection for debugging (grpcurl)
 	reflection.Register(grpcServer)
 
-	// Graceful shutdown
-	go func() {
-		sigChan := make(chan os.Signal, 1)
-		signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
-		<-sigChan
-		log.Println("Shutting down...")
-		grpcServer.GracefulStop()
-		cancel()
-	}()
+	g.Go(func() error {
+		log.Printf("Listening on %s", cfg.ListenAddr)
+		return grpcServer.Serve(lis)
+	})
 
-	log.Printf("Listening on %s", cfg.ListenAddr)
-	if err := grpcServer.Serve(lis); err != nil {
-		log.Fatalf("failed to serve: %v", err)
+	// Graceful shutdown
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+	
+	select {
+	case <-sigChan:
+		log.Println("Shutting down...")
+		// 1. Mark unhealthy
+		healthServer.SetServingStatus("", grpc_health_v1.HealthCheckResponse_NOT_SERVING)
+		
+		// 2. Stop gRPC (blocks)
+		grpcServer.GracefulStop()
+		
+		// 3. Stop other background tasks
+		cancel()
+	case <-ctx.Done():
+		// Error in group
+	}
+
+	if err := g.Wait(); err != nil {
+		if !errors.Is(err, context.Canceled) {
+			log.Printf("Server error: %v", err)
+		}
 	}
 }

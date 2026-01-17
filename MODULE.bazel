@@ -49,7 +49,13 @@ go_deps.gazelle_override(
 use_repo(
     go_deps,
     "com_github_bazelbuild_remote_apis_sdks",
+    "com_github_prometheus_client_golang",
     "com_github_spf13_viper",
+    "io_opentelemetry_go_contrib_instrumentation_google_golang_org_grpc_otelgrpc",
+    "io_opentelemetry_go_otel",
+    "io_opentelemetry_go_otel_exporters_otlp_otlptrace_otlptracegrpc",
+    "io_opentelemetry_go_otel_sdk",
+    "io_opentelemetry_go_otel_trace",
     "org_golang_google_genproto_googleapis_bytestream",
     "org_golang_google_genproto_googleapis_rpc",
     "org_golang_google_grpc",

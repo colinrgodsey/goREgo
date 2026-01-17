@@ -77,7 +77,7 @@ func (s *RemoteStore) Put(ctx context.Context, digest Digest, data io.Reader) er
 	// If we use c.Write(ctx), it returns a client.
 	// But we need to handle the resource name and uploading.
 	// The SDK client has helper methods but mostly for []byte or file paths.
-	
+
 	// We'll use the raw ByteStream Write.
 	resourceName, err := s.c.ResourceNameWrite(digest.Hash, digest.Size)
 	if err != nil {
@@ -124,14 +124,14 @@ func (s *RemoteStore) Put(ctx context.Context, digest Digest, data io.Reader) er
 			} else {
 				req.ResourceName = ""
 			}
-			
+
 			if err := stream.Send(req); err != nil {
 				return err
 			}
 			_, err := stream.CloseAndRecv()
 			return err
 		}
-		
+
 		if readErr != nil {
 			return readErr
 		}

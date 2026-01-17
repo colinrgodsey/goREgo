@@ -13,10 +13,16 @@ type Config struct {
 	ForceUpdateATime    bool   `mapstructure:"force_update_atime"`
 
 	BackingCache BackingCacheConfig `mapstructure:"backing_cache"`
+	Telemetry    TelemetryConfig    `mapstructure:"telemetry"`
 }
 
 type BackingCacheConfig struct {
 	Target string `mapstructure:"target"`
+}
+
+type TelemetryConfig struct {
+	MetricsAddr     string `mapstructure:"metrics_addr"`
+	TracingEndpoint string `mapstructure:"tracing_endpoint"`
 }
 
 type ClusterConfig struct {
@@ -33,6 +39,7 @@ func LoadConfig(configPath string) (*Config, error) {
 	v.SetDefault("local_cache_max_size_gb", 100)
 	v.SetDefault("cluster.gossip_port", 7946)
 	v.SetDefault("force_update_atime", false)
+	v.SetDefault("telemetry.metrics_addr", ":9090")
 
 	// Env overrides
 	v.SetEnvPrefix("GOREGO")
