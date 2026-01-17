@@ -115,3 +115,11 @@ This project uses **Bazel** for building and testing, and **Gazelle** for genera
     * Don't just return `err`; explain *what* failed.
     * Use error wrapping (`fmt.Errorf`) with public Err types when possible for deep error typing.
     * As a cleanup step before making a commit, run `go fmt ./...` and `buildifier -r .` for the project.
+
+---
+
+## 7. Documentation
+Maintain project documentation in the `docs/` directory using the following structure:
+*   **`docs/research/`**: Long-form research documents and architectural explorations used to inform future plans.
+*   **`docs/plan/`**: Concrete planning documents for upcoming features or refactoring work.
+*   **`docs/retro/`**: Post-completion documentation summarizing the work done, integration notes, and lessons learned from a completed plan.
