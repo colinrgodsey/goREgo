@@ -146,6 +146,10 @@ func (s *ByteStreamServer) Write(stream bytestream.ByteStream_WriteServer) error
 				s.logger.Error("missing resource name in first message")
 				return status.Error(codes.InvalidArgument, "missing resource name in first message")
 			}
+			if req.WriteOffset > 0 {
+				s.logger.Error("resumable uploads not supported", "resource", req.ResourceName, "offset", req.WriteOffset)
+				return status.Errorf(codes.InvalidArgument, "resumable uploads not supported (offset %d > 0)", req.WriteOffset)
+			}
 			resourceName = req.ResourceName
 			dg, err = parseResourceName(req.ResourceName, true)
 			if err != nil {

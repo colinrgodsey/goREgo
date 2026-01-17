@@ -133,6 +133,11 @@ To improve performance and reduce disk I/O, the input staging mechanism was opti
 - **Fallback**: If hard-linking fails (e.g., cross-device link), the worker gracefully falls back to copying the file.
 - **Safety**: To support this, we ensure that executable bits are set correctly on the CAS blobs if required by the action, while maintaining the immutable nature of the content (hard links share the underlying inode).
 
+### ByteStream Write Size Mismatch & Resumable Uploads
+During high-concurrency runs, we observed `digest size mismatch: expected X, got Y` errors in the `ByteStream` service.
+- **Issue**: Some clients were attempting resumable uploads (sending `WriteOffset > 0`). Since the server currently only supports atomic `Put` operations starting from offset 0, it would treat the partial stream as the full blob, leading to a size mismatch against the digest in the resource name.
+- **Fix**: Added strict validation in `ByteStream.Write`. The server now returns `InvalidArgument` if `WriteOffset > 0` is received, providing a clear error to the client instead of a confusing size mismatch.
+
 ## Next Steps (Phase 4)
 - **Clustering**: Implement `hashicorp/memberlist` peer-to-peer mesh
 - **Distributed Scheduling**: Load-aware task distribution
