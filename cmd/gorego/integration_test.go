@@ -107,4 +107,26 @@ func TestIntegration_CAS(t *testing.T) {
 	if !bytes.Equal(blob2Content, readContent) {
 		t.Errorf("Read content mismatch. Expected %q, got %q", string(blob2Content), string(readContent))
 	}
+
+	// F. BatchUpdateBlobs
+	blobs := map[digest.Digest][]byte{
+		digest.NewFromBlob([]byte("Batch Blob 1")): []byte("Batch Blob 1"),
+		digest.NewFromBlob([]byte("Batch Blob 2")): []byte("Batch Blob 2"),
+	}
+	if err := c.BatchWriteBlobs(ctx, blobs); err != nil {
+		t.Fatalf("BatchWriteBlobs failed: %v", err)
+	}
+
+	// Verify they exist
+	var digests []digest.Digest
+	for d := range blobs {
+		digests = append(digests, d)
+	}
+	missing, err = c.MissingBlobs(ctx, digests)
+	if err != nil {
+		t.Fatalf("MissingBlobs failed: %v", err)
+	}
+	if len(missing) != 0 {
+		t.Errorf("Expected 0 missing blobs after batch update, got %d", len(missing))
+	}
 }

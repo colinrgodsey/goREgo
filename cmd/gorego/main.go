@@ -80,10 +80,12 @@ func main() {
 		log.Println("WARNING: No backing cache configured. Using local store as remote (Passthrough).")
 		remoteStore = localStore
 	} else {
-		// TODO: Dial cfg.BackingCache.Target
-		// conn, err := grpc.Dial(cfg.BackingCache.Target, ...)
-		// remoteStore = client.New(conn)
-		log.Fatalf("Backing cache connection not implemented yet")
+		log.Printf("Connecting to backing cache at %s", cfg.BackingCache.Target)
+		var err error
+		remoteStore, err = storage.NewRemoteStore(ctx, cfg.BackingCache.Target)
+		if err != nil {
+			log.Fatalf("failed to connect to backing cache: %v", err)
+		}
 	}
 
 	proxyStore := proxy.NewProxyStore(localStore, remoteStore)

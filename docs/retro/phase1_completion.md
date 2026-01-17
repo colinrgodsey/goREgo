@@ -35,6 +35,20 @@ Phase 1 of the goREgo project has been successfully completed. The system is now
     - gRPC server implementing the REAPI `ContentAddressableStorage` service.
     - Wired up to the `ProxyStore`.
 
+## Phase 1.5 Polish & Integration (Jan 2026)
+Following the initial Phase 1 completion, additional integration work was performed to ensure the system is fully compliant with the REAPI and usable as a proxy.
+
+### Features Added
+- **Remote Client Adapter:** Implemented `pkg/storage/remote.go` using `remote-apis-sdks` to enable the server to act as a true proxy client to a backing cache (Tier 2).
+- **ByteStream Service:** Full implementation of the `google.bytestream.ByteStream` service (Read/Write) with asynchronous pipelined writes.
+- **ActionCache Service:** Implemented `GetActionResult` and `UpdateActionResult` endpoints.
+- **Batch Operations:** Implemented `BatchUpdateBlobs` in the CAS server.
+- **Refactoring:** 
+    - Renamed `lib/` to `pkg/` to match Go standards.
+    - Removed unused `max_concurrent_actions` configuration.
+    - Improved concurrency safety in `ByteStream.Write`.
+    - Added comprehensive integration tests covering ByteStream and Batch operations.
+
 ## Build & Run Instructions
 
 ### Building
@@ -54,8 +68,8 @@ To run with a specific config file:
 bazel run //cmd/gorego -- --config config.yaml
 ```
 
-## Next Steps (Phase 2 Preview)
-- Implement the gRPC Client for the Backing Cache (Tier 2) to enable true proxying.
-- Implement the Action Cache (AC) service fully.
-- Add Observability (Prometheus Metrics & OpenTelemetry Tracing).
-- Integration testing with a real Bazel build client.
+## Next Steps (Phase 2)
+- **Observability:** Implement Prometheus metrics and OpenTelemetry tracing.
+- **Cluster Mesh:** Implement the `hashicorp/memberlist` based peer-to-peer mesh.
+- **Distributed Scheduling:** Implement the load-aware scheduling logic.
+- **Execution:** Implement the actual command execution logic (via `os/exec` inside the "BYO-Environment").
