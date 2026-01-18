@@ -61,3 +61,6 @@ use_repo(
     "org_golang_google_protobuf",
     "org_golang_x_sync",
 )
+
+bazel_source = use_extension("//:bazel_deps.bzl", "bazel_source")
+use_repo(bazel_source, "bazel")

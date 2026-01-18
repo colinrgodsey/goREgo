@@ -239,6 +239,39 @@
   },
   "selectedYankedVersions": {},
   "moduleExtensions": {
+    "//:bazel_deps.bzl%bazel_source": {
+      "general": {
+        "bzlTransitiveDigest": "qaS44LZo3dTH7OW++RADpGwzXmibFM+JxXiyvwwW64k=",
+        "usagesDigest": "NRTc7V/5ebMVoHtDLrnLAkuh/3ybV1hyI0qO9qguCp8=",
+        "recordedFileInputs": {},
+        "recordedDirentsInputs": {},
+        "envVariables": {},
+        "generatedRepoSpecs": {
+          "bazel": {
+            "repoRuleId": "@@bazel_tools//tools/build_defs/repo:http.bzl%http_archive",
+            "attributes": {
+              "urls": [
+                "https://github.com/bazelbuild/bazel/releases/download/8.5.1/bazel-8.5.1-dist.zip"
+              ],
+              "sha256": "bf66a1cbaaafec32e1e103d0e07343082f1f0f3f20ad4c6b66c4eda3f690ed4d",
+              "patch_cmds": [
+                "cat > src/main/tools/execution_statistics.pb.h <<EOF\n#ifndef DUMMY_STATS_H\n#define DUMMY_STATS_H\n#include <string>\nnamespace tools {\nnamespace protos {\nclass ResourceUsage {\npublic:\n  void set_utime_sec(long) {}\n  void set_utime_usec(long) {}\n  void set_stime_sec(long) {}\n  void set_stime_usec(long) {}\n  void set_maxrss(long) {}\n  void set_ixrss(long) {}\n  void set_idrss(long) {}\n  void set_isrss(long) {}\n  void set_minflt(long) {}\n  void set_majflt(long) {}\n  void set_nswap(long) {}\n  void set_inblock(long) {}\n  void set_oublock(long) {}\n  void set_msgsnd(long) {}\n  void set_msgrcv(long) {}\n  void set_nsignals(long) {}\n  void set_nvcsw(long) {}\n  void set_nivcsw(long) {}\n};\nclass ExecutionStatistics {\npublic:\n  ResourceUsage* mutable_resource_usage() { return &ru; }\n  std::string SerializeAsString() { return \"\"; }\n  ResourceUsage ru;\n};\n}\n}\n#endif\nEOF",
+                "sed -i 's|src/main/protobuf/execution_statistics.pb.h|execution_statistics.pb.h|' src/main/tools/process-tools.cc",
+                "rm src/main/tools/BUILD",
+                "cat > src/main/tools/BUILD <<EOF\ncc_binary(\n    name = \"linux-sandbox\",\n    srcs = [\n        \"execution_statistics.pb.h\",\n        \"linux-sandbox.cc\",\n        \"linux-sandbox.h\",\n        \"linux-sandbox-pid1.cc\",\n        \"linux-sandbox-pid1.h\",\n        \"linux-sandbox-options.cc\",\n        \"linux-sandbox-options.h\",\n        \"logging.cc\",\n        \"logging.h\",\n        \"process-tools.cc\",\n        \"process-tools.h\",\n        \"process-tools-linux.cc\",\n    ],\n    visibility = [\"//visibility:public\"],\n)\nEOF"
+              ]
+            }
+          }
+        },
+        "recordedRepoMappingEntries": [
+          [
+            "",
+            "bazel_tools",
+            "bazel_tools"
+          ]
+        ]
+      }
+    },
     "@@googleapis+//:extensions.bzl%switched_rules": {
       "general": {
         "bzlTransitiveDigest": "1ZTg77R3Ks/ksx8QMNIoTRJetbJPRlzGFlJa9hoUn+Y=",
