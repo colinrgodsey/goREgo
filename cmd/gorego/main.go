@@ -140,7 +140,7 @@ func main() {
 	// 3. Remote Storage (Tier 2 - Optional/Placeholder for now)
 	var remoteStore storage.BlobStore
 	if cfg.BackingCache.Target == "" {
-		slog.Warn("No backing cache configured. Using local store as remote (Passthrough).")
+		slog.Warn("No backing cache configured. Using local store as remote.")
 		remoteStore = localStore
 	} else {
 		slog.Info("Connecting to backing cache", "target", cfg.BackingCache.Target)

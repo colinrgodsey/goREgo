@@ -5,22 +5,42 @@
 replicaCount: 1
 
 image:
-  repository: gorego
+  repository: ghcr.io/colinrgodsey/buildfarm-worker
   pullPolicy: IfNotPresent
   # Overrides the image tag whose default is the chart appVersion.
-  tag: ""
+  tag: "latest"
 
 imagePullSecrets: []
 nameOverride: ""
 fullnameOverride: ""
 
+statefulset:
+  enabled: true
+
 service:
   type: ClusterIP
-  port: 50051
+  port: 9092
+
+probes:
+  liveness:
+    initialDelaySeconds: 3
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+  readiness:
+    initialDelaySeconds: 1
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+
+storage:
+  # If empty, default storage class will be used.
+  className: ""
+  size: 10Gi
 
 config:
   listen_addr: ":50051"
-  local_cache_dir: "/cache"
+  local_cache_dir: "/tmp/cache"
   local_cache_max_size_gb: 10
   log_level: "info"
   backing_cache:
@@ -31,7 +51,7 @@ config:
   execution:
     enabled: true
     concurrency: 0
-    build_root: "/build"
+    build_root: "/tmp/build"
     queue_size: 1000
     sandbox:
       enabled: true

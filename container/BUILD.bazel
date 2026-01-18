@@ -1,5 +1,5 @@
-load("@rules_pkg//:pkg.bzl", "pkg_tar")
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_push")
+load("@rules_pkg//:pkg.bzl", "pkg_tar")
 
 pkg_tar(
     name = "bins",
@@ -24,12 +24,17 @@ oci_image(
         "apt-get install -y zip unzip build-essential",
     ],
     entrypoint = ["/bin/gorego"],
+    labels = {
+        "org.opencontainers.image.source": "https://github.com/colinrgodsey/goREgo",
+        "org.opencontainers.image.description": "GoREGo - Bazel Remote Execution",
+    },
     tars = [
         ":bins",
         ":config",
     ],
 )
 
+# TODO: bazel stamp
 # bazel run //container:push -- --tag latest
 oci_push(
     name = "push",

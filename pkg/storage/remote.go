@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/bazelbuild/remote-apis-sdks/go/pkg/client"
 	repb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
@@ -16,8 +17,9 @@ type RemoteStore struct {
 
 func NewRemoteStore(ctx context.Context, target string) (*RemoteStore, error) {
 	// TODO: Support TLS/Auth configuration
+	dialAddr := strings.TrimPrefix(target, "grpc://")
 	c, err := client.NewClient(ctx, "", client.DialParams{
-		Service:    target,
+		Service:    dialAddr,
 		NoSecurity: true,
 	})
 	if err != nil {

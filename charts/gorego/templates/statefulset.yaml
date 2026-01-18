@@ -1,11 +1,13 @@
+{{- if .Values.statefulset.enabled }}
 apiVersion: apps/v1
-kind: Deployment
+kind: StatefulSet
 metadata:
   name: {{ include "gorego.fullname" . }}
   labels:
     {{- include "gorego.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.replicaCount }}
+  serviceName: {{ include "gorego.fullname" . }}
   selector:
     matchLabels:
       {{- include "gorego.selectorLabels" . | nindent 6 }}
@@ -24,13 +26,40 @@ spec:
             - name: grpc
               containerPort: 50051
               protocol: TCP
+          livenessProbe:
+            tcpSocket:
+              port: grpc
+            initialDelaySeconds: {{ .Values.probes.liveness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.liveness.periodSeconds }}
+            timeoutSeconds: {{ .Values.probes.liveness.timeoutSeconds }}
+            failureThreshold: {{ .Values.probes.liveness.failureThreshold }}
+          readinessProbe:
+            tcpSocket:
+              port: grpc
+            initialDelaySeconds: {{ .Values.probes.readiness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.readiness.periodSeconds }}
+            timeoutSeconds: {{ .Values.probes.readiness.timeoutSeconds }}
+            failureThreshold: {{ .Values.probes.readiness.failureThreshold }}
           volumeMounts:
             - name: config
               mountPath: /etc/gorego
+            - name: data
+              mountPath: /tmp
       volumes:
         - name: config
           configMap:
             name: {{ include "gorego.fullname" . }}
+  volumeClaimTemplates:
+  - metadata:
+      name: data
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      {{- if .Values.storage.className }}
+      storageClassName: {{ .Values.storage.className }}
+      {{- end }}
+      resources:
+        requests:
+          storage: {{ .Values.storage.size }}
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -61,3 +90,4 @@ data:
         writable_paths: []
         kill_delay: {{ .Values.config.execution.sandbox.kill_delay }}
         debug: {{ .Values.config.execution.sandbox.debug }}
+{{- end }}
