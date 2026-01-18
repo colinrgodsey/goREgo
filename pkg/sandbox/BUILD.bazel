@@ -1,0 +1,16 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "sandbox",
+    srcs = ["sandbox.go"],
+    importpath = "github.com/colinrgodsey/goREgo/pkg/sandbox",
+    visibility = ["//visibility:public"],
+    deps = ["//pkg/config"],
+)
+
+go_test(
+    name = "sandbox_test",
+    srcs = ["sandbox_test.go"],
+    embed = [":sandbox"],
+    deps = ["//pkg/config"],
+)

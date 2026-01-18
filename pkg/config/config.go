@@ -19,10 +19,20 @@ type Config struct {
 }
 
 type ExecutionConfig struct {
-	Enabled     bool   `mapstructure:"enabled"`
-	Concurrency int    `mapstructure:"concurrency"` // 0 = runtime.NumCPU()
-	BuildRoot   string `mapstructure:"build_root"`
-	QueueSize   int    `mapstructure:"queue_size"`
+	Enabled     bool          `mapstructure:"enabled"`
+	Concurrency int           `mapstructure:"concurrency"` // 0 = runtime.NumCPU()
+	BuildRoot   string        `mapstructure:"build_root"`
+	QueueSize   int           `mapstructure:"queue_size"`
+	Sandbox     SandboxConfig `mapstructure:"sandbox"`
+}
+
+type SandboxConfig struct {
+	Enabled          bool     `mapstructure:"enabled"`
+	BinaryPath       string   `mapstructure:"binary_path"`
+	NetworkIsolation bool     `mapstructure:"network_isolation"`
+	WritablePaths    []string `mapstructure:"writable_paths"`
+	KillDelay        int      `mapstructure:"kill_delay"` // seconds after timeout to SIGKILL
+	Debug            bool     `mapstructure:"debug"`
 }
 
 type BackingCacheConfig struct {
@@ -54,6 +64,12 @@ func LoadConfig(configPath string) (*Config, error) {
 	v.SetDefault("execution.concurrency", 0)
 	v.SetDefault("execution.build_root", "/tmp/gorego/builds")
 	v.SetDefault("execution.queue_size", 1000)
+	v.SetDefault("execution.sandbox.enabled", false)
+	v.SetDefault("execution.sandbox.binary_path", "/usr/bin/linux-sandbox")
+	v.SetDefault("execution.sandbox.network_isolation", true)
+	v.SetDefault("execution.sandbox.writable_paths", []string{})
+	v.SetDefault("execution.sandbox.kill_delay", 5)
+	v.SetDefault("execution.sandbox.debug", false)
 
 	// Env overrides
 	v.SetEnvPrefix("GOREGO")

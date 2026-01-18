@@ -33,7 +33,10 @@ func TestWorkerPool_InputHardlinking(t *testing.T) {
 		QueueSize:   100,
 	}
 
-	wp := NewWorkerPool(cfg, sched, localStore, localStore)
+	wp, err := NewWorkerPool(cfg, sched, localStore, localStore)
+	if err != nil {
+		t.Fatalf("Failed to create worker pool: %v", err)
+	}
 	ctx := context.Background()
 
 	// Create an input file
@@ -161,7 +164,10 @@ func TestWorkerPool_InputHardlinking_Executable(t *testing.T) {
 		QueueSize:   100,
 	}
 
-	wp := NewWorkerPool(cfg, sched, localStore, localStore)
+	wp, err := NewWorkerPool(cfg, sched, localStore, localStore)
+	if err != nil {
+		t.Fatalf("Failed to create worker pool: %v", err)
+	}
 	ctx := context.Background()
 
 	// Create an input file that is NOT executable in CAS

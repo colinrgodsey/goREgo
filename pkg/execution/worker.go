@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -15,6 +16,7 @@ import (
 	"github.com/bazelbuild/remote-apis-sdks/go/pkg/digest"
 	repb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
 	"github.com/colinrgodsey/goREgo/pkg/config"
+	"github.com/colinrgodsey/goREgo/pkg/sandbox"
 	"github.com/colinrgodsey/goREgo/pkg/scheduler"
 	"github.com/colinrgodsey/goREgo/pkg/storage"
 	"go.opentelemetry.io/otel"
@@ -38,15 +40,23 @@ type WorkerPool struct {
 	actionCache storage.ActionCache
 	buildRoot   string
 	concurrency int
+	sandbox     *sandbox.Sandbox // may be nil if disabled
 	tracer      trace.Tracer
 	logger      *slog.Logger
 }
 
 // NewWorkerPool creates a new WorkerPool.
-func NewWorkerPool(cfg config.ExecutionConfig, sched *scheduler.Scheduler, blobStore storage.BlobStore, actionCache storage.ActionCache) *WorkerPool {
+// Returns error if sandbox is enabled but initialization fails.
+func NewWorkerPool(cfg config.ExecutionConfig, sched *scheduler.Scheduler, blobStore storage.BlobStore, actionCache storage.ActionCache) (*WorkerPool, error) {
 	concurrency := cfg.Concurrency
 	if concurrency <= 0 {
 		concurrency = runtime.NumCPU()
+	}
+
+	// Initialize sandbox if enabled
+	sb, err := sandbox.New(cfg.Sandbox)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize sandbox: %w", err)
 	}
 
 	return &WorkerPool{
@@ -55,9 +65,10 @@ func NewWorkerPool(cfg config.ExecutionConfig, sched *scheduler.Scheduler, blobS
 		actionCache: actionCache,
 		buildRoot:   cfg.BuildRoot,
 		concurrency: concurrency,
+		sandbox:     sb,
 		tracer:      otel.Tracer("gorego/pkg/execution"),
 		logger:      slog.Default().With("component", "worker"),
-	}
+	}, nil
 }
 
 // Run starts the worker pool. It blocks until the context is cancelled.
@@ -155,16 +166,35 @@ func (w *WorkerPool) execute(ctx context.Context, task *scheduler.Task) (*repb.A
 		return nil, status.Errorf(codes.InvalidArgument, "invalid input root digest: %v", err)
 	}
 
-	// 4. Create working directory
-	workDir := filepath.Join(w.buildRoot, task.OperationID)
-	if err := os.MkdirAll(workDir, 0755); err != nil {
-		return nil, fmt.Errorf("failed to create work dir: %w", err)
-	}
-	defer os.RemoveAll(workDir) // Cleanup
+	// 4. Create working directory structure
+	// New layout: baseDir/{inputs/, execroot/}
+	baseDir := filepath.Join(w.buildRoot, task.OperationID)
+	inputsDir := filepath.Join(baseDir, "inputs")
+	execRoot := filepath.Join(baseDir, "execroot")
 
-	// 5. Stage inputs
-	if err := w.stageInputs(ctx, workDir, inputRootDigest); err != nil {
+	if err := os.MkdirAll(inputsDir, 0755); err != nil {
+		return nil, fmt.Errorf("failed to create inputs dir: %w", err)
+	}
+	if err := os.MkdirAll(execRoot, 0755); err != nil {
+		return nil, fmt.Errorf("failed to create execroot: %w", err)
+	}
+	defer os.RemoveAll(baseDir) // Cleanup
+
+	// 5. Stage inputs to inputsDir
+	if err := w.stageInputs(ctx, inputsDir, inputRootDigest); err != nil {
 		return nil, fmt.Errorf("failed to stage inputs: %w", err)
+	}
+
+	// 5.5 Build input mounts map (source -> target) for sandbox
+	inputMounts, err := w.buildInputMounts(inputsDir, execRoot)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build input mounts: %w", err)
+	}
+
+	// 5.6 Create working directory in execroot
+	workingDir := filepath.Join(execRoot, command.WorkingDirectory)
+	if err := os.MkdirAll(workingDir, 0755); err != nil {
+		return nil, fmt.Errorf("failed to create working directory: %w", err)
 	}
 
 	w.logger.Debug("Creating output directories",
@@ -172,39 +202,20 @@ func (w *WorkerPool) execute(ctx context.Context, task *scheduler.Task) (*repb.A
 		"output_directories", command.OutputDirectories,
 		"output_paths", command.OutputPaths)
 
-	// 5.5 Create output directories
-	for _, outputFile := range command.OutputFiles {
-		// Output files are relative to the working directory (which is inside workDir)
-		path := filepath.Join(workDir, command.WorkingDirectory, outputFile)
-		dir := filepath.Dir(path)
-		if err := os.MkdirAll(dir, 0755); err != nil {
-			return nil, fmt.Errorf("failed to create output parent dir %s: %w", dir, err)
-		}
+	// 5.7 Create output directories and collect writable paths
+	writablePaths, err := w.createOutputDirectories(execRoot, command)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create output directories: %w", err)
 	}
 
-	for _, outputDir := range command.OutputDirectories {
-		path := filepath.Join(workDir, command.WorkingDirectory, outputDir)
-		if err := os.MkdirAll(path, 0755); err != nil {
-			return nil, fmt.Errorf("failed to create output dir %s: %w", path, err)
-		}
-	}
-
-	for _, outputPath := range command.OutputPaths {
-		path := filepath.Join(workDir, command.WorkingDirectory, outputPath)
-		dir := filepath.Dir(path)
-		if err := os.MkdirAll(dir, 0755); err != nil {
-			return nil, fmt.Errorf("failed to create output parent dir %s: %w", dir, err)
-		}
-	}
-
-	// 6. Execute command
-	execResult, err := w.runCommand(ctx, workDir, command, action.Timeout)
+	// 6. Execute command (with or without sandbox)
+	execResult, err := w.runCommand(ctx, execRoot, inputMounts, writablePaths, command, action.Timeout)
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute command: %w", err)
 	}
 
-	// 7. Upload outputs
-	result, err := w.uploadOutputs(ctx, workDir, command, execResult)
+	// 7. Upload outputs (from execRoot)
+	result, err := w.uploadOutputs(ctx, execRoot, command, execResult)
 	if err != nil {
 		return nil, fmt.Errorf("failed to upload outputs: %w", err)
 	}
@@ -386,6 +397,112 @@ func (w *WorkerPool) stageFile(ctx context.Context, targetPath string, d digest.
 	return err
 }
 
+// buildInputMounts walks the inputs directory and returns a map of
+// source paths to target paths for bind mounting in the sandbox.
+func (w *WorkerPool) buildInputMounts(inputsDir, execRoot string) (map[string]string, error) {
+	mounts := make(map[string]string)
+
+	err := filepath.WalkDir(inputsDir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil // Skip directories, only mount files
+		}
+
+		relPath, err := filepath.Rel(inputsDir, path)
+		if err != nil {
+			return err
+		}
+
+		targetPath := filepath.Join(execRoot, relPath)
+
+		// Ensure target directory exists
+		if err := os.MkdirAll(filepath.Dir(targetPath), 0755); err != nil {
+			return err
+		}
+
+		mounts[path] = targetPath
+		return nil
+	})
+
+	return mounts, err
+}
+
+// createOutputDirectories creates output directories in execRoot and returns
+// the list of paths that need to be writable inside the sandbox.
+func (w *WorkerPool) createOutputDirectories(execRoot string, command *repb.Command) ([]string, error) {
+	var writablePaths []string
+	workingDir := filepath.Join(execRoot, command.WorkingDirectory)
+
+	// Process OutputFiles
+	for _, outputFile := range command.OutputFiles {
+		path := filepath.Join(workingDir, outputFile)
+		dir := filepath.Dir(path)
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return nil, fmt.Errorf("failed to create output parent dir %s: %w", dir, err)
+		}
+		writablePaths = append(writablePaths, dir)
+	}
+
+	// Process OutputDirectories
+	for _, outputDir := range command.OutputDirectories {
+		path := filepath.Join(workingDir, outputDir)
+		if err := os.MkdirAll(path, 0755); err != nil {
+			return nil, fmt.Errorf("failed to create output dir %s: %w", path, err)
+		}
+		writablePaths = append(writablePaths, path)
+	}
+
+	// Process OutputPaths (REAPI v2.1+)
+	for _, outputPath := range command.OutputPaths {
+		path := filepath.Join(workingDir, outputPath)
+		dir := filepath.Dir(path)
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return nil, fmt.Errorf("failed to create output parent dir %s: %w", dir, err)
+		}
+		writablePaths = append(writablePaths, dir)
+	}
+
+	// Deduplicate paths
+	return deduplicatePaths(writablePaths), nil
+}
+
+// materializeInputsForUnsandboxed creates hard links or symlinks of inputs
+// in their target locations when running without sandbox.
+func (w *WorkerPool) materializeInputsForUnsandboxed(inputMounts map[string]string) error {
+	for source, target := range inputMounts {
+		// Ensure target directory exists
+		if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
+			return fmt.Errorf("failed to create target dir for %s: %w", target, err)
+		}
+
+		// Try hard link first
+		if err := os.Link(source, target); err == nil {
+			continue
+		}
+
+		// Fall back to symlink
+		if err := os.Symlink(source, target); err != nil {
+			return fmt.Errorf("failed to link %s -> %s: %w", source, target, err)
+		}
+	}
+	return nil
+}
+
+// deduplicatePaths removes duplicate paths from a slice.
+func deduplicatePaths(paths []string) []string {
+	seen := make(map[string]bool)
+	result := make([]string, 0, len(paths))
+	for _, p := range paths {
+		if !seen[p] {
+			seen[p] = true
+			result = append(result, p)
+		}
+	}
+	return result
+}
+
 type execResult struct {
 	exitCode int
 	stdout   []byte
@@ -393,7 +510,7 @@ type execResult struct {
 	duration time.Duration
 }
 
-func (w *WorkerPool) runCommand(ctx context.Context, workDir string, command *repb.Command, timeout *durationpb.Duration) (*execResult, error) {
+func (w *WorkerPool) runCommand(ctx context.Context, execRoot string, inputMounts map[string]string, writablePaths []string, command *repb.Command, timeout *durationpb.Duration) (*execResult, error) {
 	ctx, span := w.tracer.Start(ctx, "worker.runCommand")
 	defer span.End()
 
@@ -410,21 +527,57 @@ func (w *WorkerPool) runCommand(ctx context.Context, workDir string, command *re
 		return nil, status.Error(codes.InvalidArgument, "command has no arguments")
 	}
 
-	cmd := exec.CommandContext(ctx, command.Arguments[0], command.Arguments[1:]...)
-	cmd.Dir = filepath.Join(workDir, command.WorkingDirectory)
+	workingDir := filepath.Join(execRoot, command.WorkingDirectory)
 
-	// Set environment
-	env := os.Environ() // Start with current env
+	// Build environment
+	env := os.Environ()
 	for _, ev := range command.EnvironmentVariables {
 		env = append(env, fmt.Sprintf("%s=%s", ev.Name, ev.Value))
 	}
-	cmd.Env = env
+
+	var cmd *exec.Cmd
+	sandboxed := false
+
+	if w.sandbox != nil && w.sandbox.Enabled() {
+		// Sandboxed execution
+		sandboxed = true
+
+		spec := sandbox.WrapSpec{
+			ExecRoot:      execRoot,
+			InputMounts:   inputMounts,
+			WritablePaths: writablePaths,
+			Timeout:       cmdTimeout,
+			Command:       command.Arguments,
+		}
+
+		sandboxArgs, err := w.sandbox.WrapCommand(spec)
+		if err != nil {
+			return nil, fmt.Errorf("failed to wrap command in sandbox: %w", err)
+		}
+
+		cmd = exec.CommandContext(ctx, sandboxArgs[0], sandboxArgs[1:]...)
+		cmd.Dir = workingDir
+		cmd.Env = env
+	} else {
+		// Direct execution (no sandbox)
+		// Materialize inputs into execRoot via links
+		if err := w.materializeInputsForUnsandboxed(inputMounts); err != nil {
+			return nil, fmt.Errorf("failed to materialize inputs: %w", err)
+		}
+
+		cmd = exec.CommandContext(ctx, command.Arguments[0], command.Arguments[1:]...)
+		cmd.Dir = workingDir
+		cmd.Env = env
+	}
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
-	w.logger.Debug("Executing command", "dir", cmd.Dir, "args", cmd.Args)
+	w.logger.Debug("Executing command",
+		"dir", cmd.Dir,
+		"args", cmd.Args,
+		"sandboxed", sandboxed)
 
 	start := time.Now()
 	err := cmd.Run()
@@ -450,6 +603,7 @@ func (w *WorkerPool) runCommand(ctx context.Context, workDir string, command *re
 	span.SetAttributes(
 		attribute.Int("exit_code", result.exitCode),
 		attribute.Int64("duration_ms", duration.Milliseconds()),
+		attribute.Bool("sandboxed", sandboxed),
 	)
 
 	return result, nil

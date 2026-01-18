@@ -33,7 +33,10 @@ func TestWorkerPool_Execute(t *testing.T) {
 		QueueSize:   100,
 	}
 
-	wp := NewWorkerPool(cfg, sched, localStore, localStore)
+	wp, err := NewWorkerPool(cfg, sched, localStore, localStore)
+	if err != nil {
+		t.Fatalf("Failed to create worker pool: %v", err)
+	}
 
 	// Create a simple "echo hello" command
 	command := &repb.Command{
@@ -170,7 +173,10 @@ func TestWorkerPool_ExecuteWithOutputFile(t *testing.T) {
 		QueueSize:   100,
 	}
 
-	wp := NewWorkerPool(cfg, sched, localStore, localStore)
+	wp, err := NewWorkerPool(cfg, sched, localStore, localStore)
+	if err != nil {
+		t.Fatalf("Failed to create worker pool: %v", err)
+	}
 
 	// Create a command that writes to a file
 	command := &repb.Command{
@@ -312,7 +318,10 @@ func TestWorkerPool_NonZeroExitCode(t *testing.T) {
 		QueueSize:   100,
 	}
 
-	wp := NewWorkerPool(cfg, sched, localStore, localStore)
+	wp, err := NewWorkerPool(cfg, sched, localStore, localStore)
+	if err != nil {
+		t.Fatalf("Failed to create worker pool: %v", err)
+	}
 
 	// Create a command that exits with non-zero code
 	command := &repb.Command{
@@ -425,7 +434,10 @@ func TestWorkerPool_InputMaterialization(t *testing.T) {
 		QueueSize:   100,
 	}
 
-	wp := NewWorkerPool(cfg, sched, localStore, localStore)
+	wp, err := NewWorkerPool(cfg, sched, localStore, localStore)
+	if err != nil {
+		t.Fatalf("Failed to create worker pool: %v", err)
+	}
 	ctx := context.Background()
 
 	// Create an input file

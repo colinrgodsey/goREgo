@@ -165,7 +165,11 @@ func main() {
 		})
 
 		// Start worker pool
-		workerPool := execution.NewWorkerPool(cfg.Execution, sched, proxyStore, proxyStore)
+		workerPool, err := execution.NewWorkerPool(cfg.Execution, sched, proxyStore, proxyStore)
+		if err != nil {
+			slog.Error("failed to initialize worker pool", "error", err)
+			os.Exit(1)
+		}
 		g.Go(func() error {
 			if err := workerPool.Run(ctx); err != nil {
 				if !errors.Is(err, context.Canceled) {
