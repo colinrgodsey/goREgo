@@ -137,6 +137,53 @@ The core logic resides in `pkg/`. Here is the breakdown of responsibilities:
 *   **`pkg/proxy`**: The caching logic layer. Implements the "Read-Through" and "Write-Through" strategies, coordinating between the `LocalStore` and the authoritative `BackingCache`. Includes `singleflight` for request deduplication.
 *   **`pkg/server`**: gRPC service implementations. Contains the handlers for REAPI services (`ContentAddressableStorage`, `ActionCache`, `ByteStream`, `Capabilities`) and health checks.
 *   **`pkg/storage`**:
-    *   **`LocalStore`**: Disk-based storage engine for the local cache.
+    *   **`LocalStore`**: Disk-based storage engine for the local cache. Implements `LocalBlobStore` interface for filesystem path access (`BlobPath`, `PutFile`).
     *   **`RemoteStore`**: Client adapter for communicating with the external backing cache (Tier 2).
 *   **`pkg/telemetry`**: Observability initialization. Sets up Prometheus metrics, OpenTelemetry tracing exporters, and structured logging.
+*   **`pkg/scheduler`**: Task queue and operation state management for remote execution.
+    *   In-memory operation tracking (operation ID → status)
+    *   State machine: QUEUED → EXECUTING → COMPLETED
+    *   Subscription system for streaming operation updates to clients
+*   **`pkg/execution`**: Worker pool for action execution.
+    *   `WorkerPool` manages N concurrent workers (default: `runtime.NumCPU()`)
+    *   Input staging via hard links from CAS (`stageInputs` → `stageDirectory` → `stageFile`)
+    *   Command execution via `os/exec` (wrapped with `linux-sandbox` when enabled)
+    *   Output collection via hard links back to CAS (`uploadOutputs` → `uploadFile`)
+    *   Directory lifecycle: create → stage → execute → collect → cleanup
+*   **`pkg/sandbox`**: Linux sandbox wrapper for hermetic execution isolation.
+    *   Constructs `linux-sandbox` command line with bind mounts and namespace isolation
+    *   Read-only input protection via mount namespaces
+    *   Optional network isolation
+
+---
+
+## 9. Execution Architecture
+
+### Data Flow
+
+```
+Task Dequeue → Fetch Protos (Action/Command/InputRoot) →
+Stage Inputs (hard link from CAS) → Execute Command →
+Collect Outputs (hard link to CAS) → Update Action Cache → Cleanup
+```
+
+### Directory Structure (Sandboxed)
+
+```
+buildRoot/{operationID}/
+  ├── inputs/              # Hard-linked from CAS (read-only bind mount)
+  │   └── {input files}
+  └── execroot/            # Working directory (writable)
+      └── {WorkingDirectory}/
+          └── {outputs}
+```
+
+### Key Patterns
+
+*   **Hard Linking Optimization**: Zero-copy input staging and output collection via hard links between CAS and execution directories. Falls back to copy on cross-filesystem scenarios.
+*   **LocalBlobStore Interface**: Provides filesystem path access (`BlobPath`) for hard linking and direct file operations (`PutFile`).
+*   **Executable Permission Handling**: CAS blobs are `chmod +x` before hard linking if the action requires executable inputs.
+*   **Sandbox Isolation**: When enabled, `linux-sandbox` wraps command execution with:
+    *   Mount namespace: Bind mount inputs read-only
+    *   Network namespace: Disable network access (optional)
+    *   PID namespace: Isolate process visibility
