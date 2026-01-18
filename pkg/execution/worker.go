@@ -543,7 +543,7 @@ func (w *WorkerPool) runCommand(ctx context.Context, execRoot string, inputMount
 		sandboxed = true
 
 		spec := sandbox.WrapSpec{
-			ExecRoot:      execRoot,
+			ExecRoot:      workingDir,
 			InputMounts:   inputMounts,
 			WritablePaths: writablePaths,
 			Timeout:       cmdTimeout,

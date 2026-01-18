@@ -37,6 +37,11 @@ go_test(
         "//pkg/storage",
         "@com_github_bazelbuild_remote_apis//build/bazel/remote/execution/v2:remote_execution_go_proto",
         "@com_github_bazelbuild_remote_apis_sdks//go/pkg/digest",
+        "@io_bazel_rules_go//go/tools/bazel:go_default_library",
         "@org_golang_google_protobuf//proto",
+    ],
+    data = [
+        "fake_sandbox.sh",
+        "//src/main/tools:linux-sandbox",
     ],
 )
