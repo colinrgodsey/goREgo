@@ -159,6 +159,11 @@ func (s *LocalStore) Put(ctx context.Context, digest Digest, data io.Reader) err
 		return fmt.Errorf("failed to rename temp file: %w", err)
 	}
 
+	if err := os.Chmod(path, 0444); err != nil {
+		s.logger.Error("failed to make file read-only", "path", path, "error", err)
+		return fmt.Errorf("failed to make file read-only: %w", err)
+	}
+
 	return nil
 }
 
@@ -178,49 +183,65 @@ func (s *LocalStore) PutFile(ctx context.Context, digest Digest, sourcePath stri
 		return fmt.Errorf("failed to create directory: %w", err)
 	}
 
-	// Try hard linking first
-	// We need to ensure we don't overwrite an existing file if we raced,
-	// but LocalStore logic usually assumes we can just write.
-	// For atomicity, link to tmp then rename?
-	// os.Link doesn't overwrite.
 	tmpPath := path + ".tmp"
-	if err := os.Link(sourcePath, tmpPath); err != nil {
-		s.logger.Debug("hardlink failed, falling back to copy", "src", sourcePath, "dst", tmpPath, "error", err)
+	// Ensure the temporary file is removed on error before it's renamed.
+	// If rename succeeds, this defer will remove the new file if an error occurs *after* rename.
+	// This is a bit tricky, but the typical pattern is to defer cleanup of tmpPath.
+	// If the rename happens, tmpPath no longer exists, so os.Remove(tmpPath) does nothing.
+	defer func() {
+		// Only remove if it still exists (i.e., rename didn't happen, or an error occurred post-rename)
+		if _, statErr := os.Stat(tmpPath); statErr == nil {
+			os.Remove(tmpPath)
+		}
+	}()
+
+	// Try hard linking first
+	linkErr := os.Link(sourcePath, tmpPath)
+	if linkErr == nil {
+		// Hardlink succeeded, ensure permissions are correct (read-only for CAS)
+		// os.Link preserves permissions of source. We want 0444 for cached files.
+		if err := os.Chmod(tmpPath, 0444); err != nil {
+			s.logger.Error("failed to set read-only permissions on hardlinked file", "path", tmpPath, "error", err)
+			return fmt.Errorf("failed to set read-only permissions on hardlinked file: %w", err)
+		}
+	} else {
+		s.logger.Warn("hardlink failed, falling back to copy", "src", sourcePath, "dst", tmpPath, "error", linkErr)
 
 		// Fallback to copy
 		src, err := os.Open(sourcePath)
 		if err != nil {
 			return err
 		}
-		defer src.Close()
+		defer src.Close() // Close source file
 
 		dst, err := os.Create(tmpPath)
 		if err != nil {
 			return err
 		}
-		defer func() {
-			dst.Close()
-			os.Remove(tmpPath) // Cleanup if rename didn't happen
-		}()
+		defer dst.Close() // Close destination file (important before rename)
 
 		if _, err := io.Copy(dst, src); err != nil {
 			return err
 		}
+		// Explicitly close dst to ensure all data is flushed before chmod/rename
 		if err := dst.Close(); err != nil {
 			return err
 		}
-	} else {
-		// Hardlink succeeded, ensure permissions are correct (read-only for CAS?)
-		// LocalStore Put uses 0644 implicitly via os.Create.
-		// os.Link preserves permissions of source.
-		// Let's ensure at least 0644.
-		info, err := os.Stat(tmpPath)
-		if err == nil {
-			if info.Mode()&0600 != 0600 {
-				os.Chmod(tmpPath, info.Mode()|0600)
-			}
+
+		if err := os.Chmod(tmpPath, 0444); err != nil {
+			s.logger.Error("failed to set read-only permissions on copied file", "path", tmpPath, "error", err)
+			return fmt.Errorf("failed to set read-only permissions on copied file: %w", err)
 		}
 	}
 
-	return os.Rename(tmpPath, path)
+	// Atomically move the temporary file to its final destination
+	if err := os.Rename(tmpPath, path); err != nil {
+		s.logger.Error("failed to rename temp file to final path", "from", tmpPath, "to", path, "error", err)
+		return fmt.Errorf("failed to rename temp file to final path: %w", err)
+	}
+
+	// No need for a final Chmod on `path` because `rename` preserves permissions,
+	// and we've already set `tmpPath` to 0444.
+
+	return nil
 }

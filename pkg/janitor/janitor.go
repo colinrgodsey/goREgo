@@ -52,6 +52,9 @@ func (fs *stdFileSystem) Walk(root string, fn func(path string, info fileEntry, 
 }
 
 func (fs *stdFileSystem) Remove(path string) error {
+	// Best-effort attempt to make the file writable before removing.
+	// This is because the storage layer now marks files as read-only.
+	_ = os.Chmod(path, 0644)
 	return os.Remove(path)
 }
 

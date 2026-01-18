@@ -14,6 +14,8 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+const readBufferSize = 64 * 1024
+
 type ByteStreamServer struct {
 	bytestream.UnimplementedByteStreamServer
 	Store  storage.BlobStore
@@ -91,7 +93,7 @@ func (s *ByteStreamServer) Read(req *bytestream.ReadRequest, stream bytestream.B
 		limit = req.ReadLimit
 	}
 
-	buf := make([]byte, 64*1024)
+	buf := make([]byte, readBufferSize)
 	var totalSent int64
 	for totalSent < limit {
 		toRead := int64(len(buf))
