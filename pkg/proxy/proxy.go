@@ -46,6 +46,41 @@ func (p *ProxyStore) BlobPath(digest storage.Digest) (string, error) {
 	return p.local.BlobPath(digest)
 }
 
+func (p *ProxyStore) PutFile(ctx context.Context, digest storage.Digest, path string) error {
+	ctx, span := p.tracer.Start(ctx, "proxy.PutFile", trace.WithAttributes(
+		attribute.String("digest.hash", digest.Hash),
+		attribute.Int64("digest.size", digest.Size),
+		attribute.Bool("local_only", p.localOnly),
+	))
+	defer span.End()
+
+	// 1. Put to local (hardlink optimized)
+	if err := p.local.PutFile(ctx, digest, path); err != nil {
+		span.RecordError(err)
+		return err
+	}
+
+	if p.localOnly {
+		return nil
+	}
+
+	// 2. Upload to remote asynchronously (or synchronously depending on consistency requirements)
+	// ProxyStore.Put does it synchronously/concurrently. We should match that.
+	f, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	if err := p.remote.Put(ctx, digest, f); err != nil {
+		p.logger.Error("remote put file failed", "hash", digest.Hash, "error", err)
+		span.RecordError(err)
+		return err
+	}
+
+	return nil
+}
+
 func (p *ProxyStore) Has(ctx context.Context, digest storage.Digest) (bool, error) {
 	ctx, span := p.tracer.Start(ctx, "proxy.Has", trace.WithAttributes(
 		attribute.String("digest.hash", digest.Hash),

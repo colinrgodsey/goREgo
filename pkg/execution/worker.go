@@ -495,12 +495,7 @@ func (w *WorkerPool) uploadOutputs(ctx context.Context, workDir string, command 
 			return nil, fmt.Errorf("failed to stat output %s: %w", outputPath, err)
 		}
 
-		data, err := os.ReadFile(fullPath)
-		if err != nil {
-			return nil, fmt.Errorf("failed to read output %s: %w", outputPath, err)
-		}
-
-		d, err := w.uploadBlob(ctx, data)
+		d, err := w.uploadFile(ctx, fullPath)
 		if err != nil {
 			return nil, fmt.Errorf("failed to upload output %s: %w", outputPath, err)
 		}
@@ -576,12 +571,7 @@ func (w *WorkerPool) uploadOutputs(ctx context.Context, workDir string, command 
 			})
 		} else {
 			// Handle as file
-			data, err := os.ReadFile(fullPath)
-			if err != nil {
-				return nil, fmt.Errorf("failed to read output %s: %w", outputPath, err)
-			}
-
-			d, err := w.uploadBlob(ctx, data)
+			d, err := w.uploadFile(ctx, fullPath)
 			if err != nil {
 				return nil, fmt.Errorf("failed to upload output %s: %w", outputPath, err)
 			}
@@ -595,6 +585,32 @@ func (w *WorkerPool) uploadOutputs(ctx context.Context, workDir string, command 
 	}
 
 	return result, nil
+}
+
+func (w *WorkerPool) uploadFile(ctx context.Context, path string) (digest.Digest, error) {
+	d, err := digest.NewFromFile(path)
+	if err != nil {
+		return digest.Digest{}, fmt.Errorf("failed to compute digest for %s: %w", path, err)
+	}
+
+	if lbs, ok := w.blobStore.(storage.LocalBlobStore); ok {
+		if err := lbs.PutFile(ctx, d, path); err != nil {
+			return digest.Digest{}, fmt.Errorf("failed to put file %s: %w", path, err)
+		}
+		return d, nil
+	}
+
+	f, err := os.Open(path)
+	if err != nil {
+		return digest.Digest{}, fmt.Errorf("failed to open file %s: %w", path, err)
+	}
+	defer f.Close()
+
+	if err := w.blobStore.Put(ctx, d, f); err != nil {
+		return digest.Digest{}, fmt.Errorf("failed to put blob: %w", err)
+	}
+
+	return d, nil
 }
 
 func (w *WorkerPool) uploadBlob(ctx context.Context, data []byte) (digest.Digest, error) {
@@ -676,11 +692,7 @@ func (w *WorkerPool) buildDirectoryProto(ctx context.Context, dirPath string, tr
 				Target: target,
 			})
 		} else {
-			data, err := os.ReadFile(entryPath)
-			if err != nil {
-				return nil, err
-			}
-			d, err := w.uploadBlob(ctx, data)
+			d, err := w.uploadFile(ctx, entryPath)
 			if err != nil {
 				return nil, err
 			}

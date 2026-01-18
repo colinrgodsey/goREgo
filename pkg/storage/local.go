@@ -161,3 +161,66 @@ func (s *LocalStore) Put(ctx context.Context, digest Digest, data io.Reader) err
 
 	return nil
 }
+
+func (s *LocalStore) PutFile(ctx context.Context, digest Digest, sourcePath string) error {
+	path, _ := s.BlobPath(digest)
+
+	// Check if already exists
+	if _, err := os.Stat(path); err == nil {
+		if s.forceUpdateATime {
+			now := time.Now()
+			_ = os.Chtimes(path, now, now)
+		}
+		return nil
+	}
+
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return fmt.Errorf("failed to create directory: %w", err)
+	}
+
+	// Try hard linking first
+	// We need to ensure we don't overwrite an existing file if we raced,
+	// but LocalStore logic usually assumes we can just write.
+	// For atomicity, link to tmp then rename?
+	// os.Link doesn't overwrite.
+	tmpPath := path + ".tmp"
+	if err := os.Link(sourcePath, tmpPath); err != nil {
+		s.logger.Debug("hardlink failed, falling back to copy", "src", sourcePath, "dst", tmpPath, "error", err)
+
+		// Fallback to copy
+		src, err := os.Open(sourcePath)
+		if err != nil {
+			return err
+		}
+		defer src.Close()
+
+		dst, err := os.Create(tmpPath)
+		if err != nil {
+			return err
+		}
+		defer func() {
+			dst.Close()
+			os.Remove(tmpPath) // Cleanup if rename didn't happen
+		}()
+
+		if _, err := io.Copy(dst, src); err != nil {
+			return err
+		}
+		if err := dst.Close(); err != nil {
+			return err
+		}
+	} else {
+		// Hardlink succeeded, ensure permissions are correct (read-only for CAS?)
+		// LocalStore Put uses 0644 implicitly via os.Create.
+		// os.Link preserves permissions of source.
+		// Let's ensure at least 0644.
+		info, err := os.Stat(tmpPath)
+		if err == nil {
+			if info.Mode()&0600 != 0600 {
+				os.Chmod(tmpPath, info.Mode()|0600)
+			}
+		}
+	}
+
+	return os.Rename(tmpPath, path)
+}

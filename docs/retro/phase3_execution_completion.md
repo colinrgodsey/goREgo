@@ -133,6 +133,11 @@ To improve performance and reduce disk I/O, the input staging mechanism was opti
 - **Fallback**: If hard-linking fails (e.g., cross-device link), the worker gracefully falls back to copying the file.
 - **Safety**: To support this, we ensure that executable bits are set correctly on the CAS blobs if required by the action, while maintaining the immutable nature of the content (hard links share the underlying inode).
 
+### Output Collection Optimization
+Similarly, output collection was optimized to hard-link generated files directly into the local CAS.
+- **Mechanism**: Instead of reading the output file into memory and writing it to the store, the worker calculates the digest and then hard-links the file from the build directory to the CAS.
+- **Remote Upload**: The `ProxyStore` ensures that even when the local write is optimized via hard-linking, the file is still concurrently streamed to the remote backing cache (if configured).
+
 ### ByteStream Write Size Mismatch & Resumable Uploads
 During high-concurrency runs, we observed `digest size mismatch: expected X, got Y` errors in the `ByteStream` service.
 - **Issue**: Some clients were attempting resumable uploads (sending `WriteOffset > 0`). Since the server currently only supports atomic `Put` operations starting from offset 0, it would treat the partial stream as the full blob, leading to a size mismatch against the digest in the resource name.

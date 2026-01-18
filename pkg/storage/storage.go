@@ -26,6 +26,7 @@ type BlobStore interface {
 type LocalBlobStore interface {
 	BlobStore
 	BlobPath(digest Digest) (string, error)
+	PutFile(ctx context.Context, digest Digest, path string) error
 }
 
 // ActionCache defines the interface for the Action Cache (AC).
