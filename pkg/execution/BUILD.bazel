@@ -30,6 +30,10 @@ go_test(
         "sandbox_integration_test.go",
         "worker_test.go",
     ],
+    data = [
+        "fake_sandbox.sh",
+        "//src/main/tools:linux-sandbox",
+    ],
     embed = [":execution"],
     deps = [
         "//pkg/config",
@@ -39,9 +43,5 @@ go_test(
         "@com_github_bazelbuild_remote_apis_sdks//go/pkg/digest",
         "@io_bazel_rules_go//go/tools/bazel:go_default_library",
         "@org_golang_google_protobuf//proto",
-    ],
-    data = [
-        "fake_sandbox.sh",
-        "//src/main/tools:linux-sandbox",
     ],
 )

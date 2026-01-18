@@ -3,22 +3,29 @@ module(
     version = "0.0.1",
 )
 
-bazel_dep(name = "rules_go", version = "0.50.1", repo_name = "io_bazel_rules_go")
+bazel_dep(name = "rules_go", repo_name = "io_bazel_rules_go", version = "0.50.1")
 bazel_dep(name = "gazelle", version = "0.39.1")
-bazel_dep(name = "bazel_remote_apis", version = "0.0.0", repo_name = "com_github_bazelbuild_remote_apis")
+bazel_dep(name = "bazel_remote_apis", repo_name = "com_github_bazelbuild_remote_apis", version = "0.0.0")
+
 git_override(
-    module_name = "bazel_remote_apis",
     commit = "6777112ef7defa6705b1ebd2831d6c7efeb12ba2",
+    module_name = "bazel_remote_apis",
     remote = "https://github.com/bazelbuild/remote-apis.git",
 )
 
 bazel_dep(name = "googleapis", version = "0.0.0-20260109-6145b5ff")
 bazel_dep(name = "rules_proto", version = "7.0.2")
+bazel_dep(name = "aspect_bazel_lib", version = "2.7.2")
+bazel_dep(name = "bazel_skylib", version = "1.8.1")
+bazel_dep(name = "bazel_features", version = "1.30.0")
+bazel_dep(name = "rules_oci", version = "2.2.7")
 
 go_sdk = use_extension("@io_bazel_rules_go//go:extensions.bzl", "go_sdk")
+
 go_sdk.download(version = "1.24.0")
 
 go_deps = use_extension("@gazelle//:extensions.bzl", "go_deps")
+
 go_deps.from_file(go_mod = "//:go.mod")
 
 # remote-apis has pre-built BUILD files with broken deps - regenerate them cleanly
@@ -63,4 +70,31 @@ use_repo(
 )
 
 bazel_source = use_extension("//:bazel_deps.bzl", "bazel_source")
+
 use_repo(bazel_source, "bazel")
+
+oci = use_extension("@rules_oci//oci:extensions.bzl", "oci")
+
+oci.pull(
+    name = "ubuntu_image",
+    image = "ubuntu:24.04",
+    platforms = [
+        "linux/amd64",
+        "linux/arm64/v8",
+    ],
+)
+
+use_repo(oci, "ubuntu_image", "ubuntu_image_linux_amd64", "ubuntu_image_linux_arm64_v8")
+
+pkg_deps = use_extension("//:bazel_deps.bzl", "pkg_deps")
+
+bazel_dep(name = "rules_pkg", version = "1.0.1")
+bazel_dep(name = "rules_python", version = "0.31.0")
+
+bazel_lib_toolchains = use_extension("@aspect_bazel_lib//lib:extensions.bzl", "toolchains")
+
+bazel_lib_toolchains.zstd()
+
+use_repo(bazel_lib_toolchains, "zstd_toolchains")
+
+register_toolchains("@zstd_toolchains//:all")

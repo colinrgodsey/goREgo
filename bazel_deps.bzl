@@ -69,6 +69,7 @@ cc_binary(
 EOF""",
         ],
     )
+
 bazel_source = module_extension(
     implementation = _bazel_source_impl,
 )

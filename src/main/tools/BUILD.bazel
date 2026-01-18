@@ -1,1 +1,5 @@
-alias(name = "linux-sandbox", actual = "@bazel//src/main/tools:linux-sandbox", visibility = ["//visibility:public"])
+alias(
+    name = "linux-sandbox",
+    actual = "@bazel//src/main/tools:linux-sandbox",
+    visibility = ["//visibility:public"],
+)

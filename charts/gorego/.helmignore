@@ -1,0 +1,14 @@
+# Patterns to ignore when building packages.
+# This supports shell glob matching, similar to .gitignore.
+
+# Chart sources
+Chart.yaml
+LICENSE
+README.md
+values.yaml
+charts/
+templates/
+# Source manifests
+*.tgz
+# Helm config files
+.helmignore

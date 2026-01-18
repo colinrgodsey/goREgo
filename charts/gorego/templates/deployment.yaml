@@ -1,0 +1,63 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "gorego.fullname" . }}
+  labels:
+    {{- include "gorego.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "gorego.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "gorego.selectorLabels" . | nindent 8 }}
+    spec:
+      containers:
+        - name: {{ .Chart.Name }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["/bin/gorego"]
+          args: ["--config", "/etc/gorego/config.yaml"]
+          ports:
+            - name: grpc
+              containerPort: 50051
+              protocol: TCP
+          volumeMounts:
+            - name: config
+              mountPath: /etc/gorego
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "gorego.fullname" . }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "gorego.fullname" . }}
+  labels:
+    {{- include "gorego.labels" . | nindent 4 }}
+data:
+  config.yaml: |
+    listen_addr: {{ .Values.config.listen_addr | quote }}
+    local_cache_dir: {{ .Values.config.local_cache_dir | quote }}
+    local_cache_max_size_gb: {{ .Values.config.local_cache_max_size_gb }}
+    log_level: {{ .Values.config.log_level | quote }}
+    backing_cache:
+      target: {{ .Values.config.backing_cache.target | quote }}
+    telemetry:
+      metrics_addr: {{ .Values.config.telemetry.metrics_addr | quote }}
+      tracing_endpoint: {{ .Values.config.telemetry.tracing_endpoint | quote }}
+    execution:
+      enabled: {{ .Values.config.execution.enabled }}
+      concurrency: {{ .Values.config.execution.concurrency }}
+      build_root: {{ .Values.config.execution.build_root | quote }}
+      queue_size: {{ .Values.config.execution.queue_size }}
+      sandbox:
+        enabled: {{ .Values.config.execution.sandbox.enabled }}
+        binary_path: {{ .Values.config.execution.sandbox.binary_path | quote }}
+        network_isolation: {{ .Values.config.execution.sandbox.network_isolation }}
+        writable_paths: []
+        kill_delay: {{ .Values.config.execution.sandbox.kill_delay }}
+        debug: {{ .Values.config.execution.sandbox.debug }}

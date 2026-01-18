@@ -1,0 +1,38 @@
+load("@rules_pkg//:pkg.bzl", "pkg_tar")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_push")
+
+pkg_tar(
+    name = "bins",
+    srcs = [
+        "//cmd/gorego",
+        "//src/main/tools:linux-sandbox",
+    ],
+    package_dir = "/bin",
+)
+
+pkg_tar(
+    name = "config",
+    srcs = ["//:config.yaml"],
+    package_dir = "/",
+)
+
+oci_image(
+    name = "container",
+    base = "@ubuntu_image_linux_amd64",
+    cmd = [
+        "apt-get update",
+        "apt-get install -y zip unzip build-essential",
+    ],
+    entrypoint = ["/bin/gorego"],
+    tars = [
+        ":bins",
+        ":config",
+    ],
+)
+
+# bazel run //container:push -- --tag latest
+oci_push(
+    name = "push",
+    image = "container",
+    repository = "ghcr.io/colinrgodsey/gorego",
+)
