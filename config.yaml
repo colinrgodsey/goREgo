@@ -1,49 +1,38 @@
-# goREgo Configuration
-# All values shown are defaults unless otherwise noted
-
-# Server address to listen on
+# Main server listening address
 listen_addr: ":50051"
 
-# Local cache directory for CAS and AC storage
+# Local cache configuration
 local_cache_dir: "/tmp/gorego/cache"
-
-# Maximum size of local cache in GB
 local_cache_max_size_gb: 100
+force_update_atime: false # If true, force update access time on cache hits.
 
-# Force update access time on reads (needed for noatime filesystems for LRU eviction)
-force_update_atime: false
-
-# Log level: debug, info, warn, error
-log_level: "warn"
+# Global log level for structured logging.
+log_level: "warn" # Options: debug, info, warn, error
 
 # Backing cache (Tier 2) configuration
 backing_cache:
-  # gRPC target for remote cache (e.g., "grpc://remote-cache:50051")
-  # Leave empty to use local-only mode
-  target: ""
+  target: "" # Address of the backing cache server (e.g., "grpcs://some-remote.com:443")
 
-# Telemetry configuration
+# Telemetry configuration (metrics and tracing)
 telemetry:
-  # Address to serve Prometheus metrics and pprof endpoints
-  metrics_addr: ":9090"
-  # OpenTelemetry tracing endpoint (e.g., "localhost:4317")
-  # Leave empty to disable tracing export
-  tracing_endpoint: ""
+  metrics_addr: ":9090" # Prometheus metrics endpoint
+  tracing_endpoint: "" # OpenTelemetry tracing endpoint (e.g., "otel.some-remote.com:4317")
 
-# Execution configuration (remote execution worker)
+# Execution engine configuration
 execution:
-  # Enable execution service
-  enabled: true
-  # Number of concurrent workers (0 = runtime.NumCPU())
-  concurrency: 0
-  # Directory for build sandboxes
-  build_root: "/tmp/gorego/builds"
-  # Maximum number of pending tasks in queue
-  queue_size: 1000
+  enabled: true # Enable the remote execution service
+  concurrency: 0 # Number of concurrent workers (0 means use runtime.NumCPU())
+  build_root: "/tmp/gorego/builds" # Root directory for execution builds
+  queue_size: 1000 # Size of the execution request queue
+  sandbox:
+    enabled: false # Enable Linux sandboxing for execution
+    binary_path: "/usr/bin/linux-sandbox" # Path to the linux-sandbox binary
+    network_isolation: true # Isolate network inside the sandbox
+    writable_paths: [] # Additional paths to make writable inside the sandbox (e.g., "/tmp")
+    kill_delay: 5 # Seconds after timeout to send SIGKILL
+    debug: false # Enable debug logging for the sandbox
 
-# Cluster configuration (for future Phase 4)
-cluster:
-  # Port for gossip protocol (memberlist)
-  gossip_port: 7946
-  # Peer addresses to join (e.g., ["node1:7946", "node2:7946"])
-  join_peers: []
+# Cluster configuration (for distributed deployment)
+# cluster:
+#   join_peers: [] # List of peer addresses to join the cluster
+#   gossip_port: 7946 # Port for gossip communication

@@ -8,7 +8,8 @@ You are an expert Senior Go Engineer and Systems Architect acting as a specializ
 * **Build Hermeticity:** All builds must be reproducible. Do not rely on global system state.
 * **Performance First:** Prioritize zero-allocation paths in hot loops and efficient concurrency patterns.
 * **Test-Driven:** Write tests *before* implementation code.
-* **Maintainability:** Favor standard Go idioms over "clever" one-liners.
+*   **Maintainability:** Favor standard Go idioms over "clever" one-liners.
+*   **Config Updates:** When making changes to configuration, ALWAYS update the example `config.yaml` at the repository root to reflect new options and default values.
 
 ---
 
