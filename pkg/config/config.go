@@ -36,7 +36,8 @@ type SandboxConfig struct {
 }
 
 type BackingCacheConfig struct {
-	Target string `mapstructure:"target"`
+	Target      string `mapstructure:"target"`
+	Compression string `mapstructure:"compression"` // "zstd" or empty
 }
 
 type TelemetryConfig struct {

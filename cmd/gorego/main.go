@@ -143,9 +143,9 @@ func main() {
 		slog.Warn("No backing cache configured. Using null store as remote.")
 		remoteStore = storage.NewNullStore()
 	} else {
-		slog.Info("Connecting to backing cache", "target", cfg.BackingCache.Target)
+		slog.Info("Connecting to backing cache", "target", cfg.BackingCache.Target, "compression", cfg.BackingCache.Compression)
 		var err error
-		remoteStore, err = storage.NewRemoteStore(ctx, cfg.BackingCache.Target)
+		remoteStore, err = storage.NewRemoteStore(ctx, cfg.BackingCache.Target, cfg.BackingCache.Compression)
 		if err != nil {
 			slog.Error("failed to connect to backing cache", "error", err)
 			os.Exit(1)

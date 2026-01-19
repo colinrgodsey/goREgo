@@ -8,14 +8,17 @@ import (
 
 	"github.com/bazelbuild/remote-apis-sdks/go/pkg/client"
 	repb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
+	"github.com/google/uuid"
+	"github.com/klauspost/compress/zstd"
 	"google.golang.org/genproto/googleapis/bytestream"
 )
 
 type RemoteStore struct {
-	c *client.Client
+	c           *client.Client
+	compression string
 }
 
-func NewRemoteStore(ctx context.Context, target string) (*RemoteStore, error) {
+func NewRemoteStore(ctx context.Context, target string, compression string) (*RemoteStore, error) {
 	// TODO: Support TLS/Auth configuration
 	dialAddr := strings.TrimPrefix(target, "grpc://")
 	c, err := client.NewClient(ctx, "", client.DialParams{
@@ -25,7 +28,10 @@ func NewRemoteStore(ctx context.Context, target string) (*RemoteStore, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &RemoteStore{c: c}, nil
+	return &RemoteStore{
+		c:           c,
+		compression: compression,
+	}, nil
 }
 
 func (s *RemoteStore) Close() error {
@@ -40,8 +46,20 @@ func (s *RemoteStore) Has(ctx context.Context, digest Digest) (bool, error) {
 	return len(missing) == 0, nil
 }
 
+type readCloserWrapper struct {
+	io.Reader
+	io.Closer
+}
+
 func (s *RemoteStore) Get(ctx context.Context, digest Digest) (io.ReadCloser, error) {
-	resourceName, err := s.c.ResourceName("blobs", digest.Hash, fmt.Sprintf("%d", digest.Size))
+	var resourceName string
+	var err error
+
+	if s.compression == "zstd" {
+		resourceName, err = s.c.ResourceName("compressed-blobs/zstd", digest.Hash, fmt.Sprintf("%d", digest.Size))
+	} else {
+		resourceName, err = s.c.ResourceName("blobs", digest.Hash, fmt.Sprintf("%d", digest.Size))
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -72,16 +90,29 @@ func (s *RemoteStore) Get(ctx context.Context, digest Digest) (io.ReadCloser, er
 		}
 	}()
 
+	if s.compression == "zstd" {
+		decoder, err := zstd.NewReader(pr)
+		if err != nil {
+			pr.Close()
+			return nil, err
+		}
+		return &readCloserWrapper{Reader: decoder, Closer: pr}, nil
+	}
+
 	return pr, nil
 }
 
 func (s *RemoteStore) Put(ctx context.Context, digest Digest, data io.Reader) error {
-	// If we use c.Write(ctx), it returns a client.
-	// But we need to handle the resource name and uploading.
-	// The SDK client has helper methods but mostly for []byte or file paths.
+	var resourceName string
+	var err error
 
-	// We'll use the raw ByteStream Write.
-	resourceName, err := s.c.ResourceNameWrite(digest.Hash, digest.Size)
+	if s.compression == "zstd" {
+		// Use manual resource name construction for compressed uploads
+		prefix := "uploads/" + uuid.New().String() + "/compressed-blobs/zstd"
+		resourceName, err = s.c.ResourceName(prefix, digest.Hash, fmt.Sprintf("%d", digest.Size))
+	} else {
+		resourceName, err = s.c.ResourceNameWrite(digest.Hash, digest.Size)
+	}
 	if err != nil {
 		return err
 	}
@@ -91,19 +122,39 @@ func (s *RemoteStore) Put(ctx context.Context, digest Digest, data io.Reader) er
 		return err
 	}
 
+	// Prepare data stream
+	var readerToConsume io.Reader = data
+
+	if s.compression == "zstd" {
+		pr, pw := io.Pipe()
+
+		// Run compressor in background
+		go func() {
+			enc, _ := zstd.NewWriter(pw)
+			if _, err := io.Copy(enc, data); err != nil {
+				pw.CloseWithError(err)
+				return
+			}
+			if err := enc.Close(); err != nil {
+				pw.CloseWithError(err)
+				return
+			}
+			pw.Close()
+		}()
+
+		readerToConsume = pr
+	}
+
 	buf := make([]byte, 32*1024)
 	var offset int64
 	for {
-		n, readErr := data.Read(buf)
+		n, readErr := readerToConsume.Read(buf)
 		if n > 0 {
 			req := &bytestream.WriteRequest{
 				ResourceName: resourceName,
 				WriteOffset:  offset,
 				Data:         buf[:n],
 			}
-			// Only send ResourceName on first message?
-			// The proto says: "The first request of a Write operation must contain a non-empty resource_name."
-			// Subsequent ones can leave it empty.
 			if offset > 0 {
 				req.ResourceName = ""
 			}
@@ -115,12 +166,10 @@ func (s *RemoteStore) Put(ctx context.Context, digest Digest, data io.Reader) er
 		}
 
 		if readErr == io.EOF {
-			// Finish write
 			req := &bytestream.WriteRequest{
 				WriteOffset: offset,
 				FinishWrite: true,
 			}
-			// If we haven't sent anything yet (empty file), we need resource name.
 			if offset == 0 {
 				req.ResourceName = resourceName
 			} else {

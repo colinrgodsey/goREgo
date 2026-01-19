@@ -7,8 +7,10 @@ import (
 	"os"
 	"regexp"
 	"strconv"
+	"strings"
 
 	"github.com/colinrgodsey/goREgo/pkg/storage"
+	"github.com/klauspost/compress/zstd"
 	"google.golang.org/genproto/googleapis/bytestream"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -29,36 +31,45 @@ func NewByteStreamServer(store storage.BlobStore) *ByteStreamServer {
 	}
 }
 
+// Support both 'blobs' and 'compressed-blobs/zstd'
 var (
-	readResourceRegex  = regexp.MustCompile(`(?:^|.*/)blobs/([a-fA-F0-9]+)/(\d+)$`)
-	writeResourceRegex = regexp.MustCompile(`(?:^|.*/)uploads/[^/]+/blobs/([a-fA-F0-9]+)/(\d+)$`)
+	readResourceRegex  = regexp.MustCompile(`(?:^|.*/)(blobs|compressed-blobs/zstd)/([a-fA-F0-9]+)/(\d+)$`)
+	writeResourceRegex = regexp.MustCompile(`(?:^|.*/)uploads/[^/]+/(blobs|compressed-blobs/zstd)/([a-fA-F0-9]+)/(\d+)$`)
 )
 
-func parseResourceName(name string, isWrite bool) (storage.Digest, error) {
+func parseResourceName(name string, isWrite bool) (storage.Digest, bool, error) {
 	re := readResourceRegex
 	if isWrite {
 		re = writeResourceRegex
 	}
 
 	matches := re.FindStringSubmatch(name)
-	if len(matches) != 3 {
-		return storage.Digest{}, status.Errorf(codes.InvalidArgument, "invalid resource name: %s", name)
+	if len(matches) != 4 {
+		return storage.Digest{}, false, status.Errorf(codes.InvalidArgument, "invalid resource name: %s", name)
 	}
 
-	hash := matches[1]
-	size, err := strconv.ParseInt(matches[2], 10, 64)
+	typeStr := matches[1]
+	hash := matches[2]
+	size, err := strconv.ParseInt(matches[3], 10, 64)
 	if err != nil {
-		return storage.Digest{}, status.Errorf(codes.InvalidArgument, "invalid size in resource name: %v", err)
+		return storage.Digest{}, false, status.Errorf(codes.InvalidArgument, "invalid size in resource name: %v", err)
 	}
+
+	isCompressed := strings.HasPrefix(typeStr, "compressed-blobs")
 
 	return storage.Digest{
 		Hash: hash,
 		Size: size,
-	}, nil
+	}, isCompressed, nil
+}
+
+type readCloserWrapper struct {
+	io.Reader
+	io.Closer
 }
 
 func (s *ByteStreamServer) Read(req *bytestream.ReadRequest, stream bytestream.ByteStream_ReadServer) error {
-	dg, err := parseResourceName(req.ResourceName, false)
+	dg, isCompressed, err := parseResourceName(req.ResourceName, false)
 	if err != nil {
 		s.logger.Error("failed to parse resource name for read", "resource", req.ResourceName, "error", err)
 		return err
@@ -75,33 +86,60 @@ func (s *ByteStreamServer) Read(req *bytestream.ReadRequest, stream bytestream.B
 	}
 	defer rc.Close()
 
+	var reader io.Reader = rc
+	if isCompressed {
+		// Compress on the fly
+		pr, pw := io.Pipe()
+		go func() {
+			enc, _ := zstd.NewWriter(pw)
+			if _, err := io.Copy(enc, rc); err != nil {
+				pw.CloseWithError(err)
+				return
+			}
+			if err := enc.Close(); err != nil {
+				pw.CloseWithError(err)
+				return
+			}
+			pw.Close()
+		}()
+		reader = pr
+		defer pr.Close() // Ensure pipe reader is closed if we exit early
+	}
+
 	if req.ReadOffset > 0 {
-		if seeker, ok := rc.(io.Seeker); ok {
-			if _, err := seeker.Seek(req.ReadOffset, io.SeekStart); err != nil {
-				return status.Errorf(codes.Internal, "failed to seek: %v", err)
+		if isCompressed {
+			// Cannot seek in compressed stream easily
+			if _, err := io.CopyN(io.Discard, reader, req.ReadOffset); err != nil {
+				return status.Errorf(codes.Internal, "failed to skip offset in compressed stream: %v", err)
 			}
 		} else {
-			// Fallback if not seekable
-			if _, err := io.CopyN(io.Discard, rc, req.ReadOffset); err != nil {
-				return status.Errorf(codes.Internal, "failed to skip offset: %v", err)
+			if seeker, ok := rc.(io.Seeker); ok {
+				if _, err := seeker.Seek(req.ReadOffset, io.SeekStart); err != nil {
+					return status.Errorf(codes.Internal, "failed to seek: %v", err)
+				}
+			} else {
+				if _, err := io.CopyN(io.Discard, rc, req.ReadOffset); err != nil {
+					return status.Errorf(codes.Internal, "failed to skip offset: %v", err)
+				}
 			}
 		}
 	}
 
-	limit := dg.Size - req.ReadOffset
-	if req.ReadLimit > 0 && req.ReadLimit < limit {
+	buf := make([]byte, readBufferSize)
+	var totalSent int64
+	// If limit is set, use it. Else assume infinite.
+	limit := int64(1<<63 - 1)
+	if req.ReadLimit > 0 {
 		limit = req.ReadLimit
 	}
 
-	buf := make([]byte, readBufferSize)
-	var totalSent int64
 	for totalSent < limit {
 		toRead := int64(len(buf))
 		if limit-totalSent < toRead {
 			toRead = limit - totalSent
 		}
 
-		n, err := rc.Read(buf[:toRead])
+		n, err := reader.Read(buf[:toRead])
 		if n > 0 {
 			if err := stream.Send(&bytestream.ReadResponse{Data: buf[:n]}); err != nil {
 				return err
@@ -122,6 +160,7 @@ func (s *ByteStreamServer) Read(req *bytestream.ReadRequest, stream bytestream.B
 func (s *ByteStreamServer) Write(stream bytestream.ByteStream_WriteServer) error {
 	var dg storage.Digest
 	var initialized bool
+	var isCompressed bool
 	var totalWritten int64
 	var resourceName string
 
@@ -153,17 +192,28 @@ func (s *ByteStreamServer) Write(stream bytestream.ByteStream_WriteServer) error
 				return status.Errorf(codes.InvalidArgument, "resumable uploads not supported (offset %d > 0)", req.WriteOffset)
 			}
 			resourceName = req.ResourceName
-			dg, err = parseResourceName(req.ResourceName, true)
+			dg, isCompressed, err = parseResourceName(req.ResourceName, true)
 			if err != nil {
 				s.logger.Error("failed to parse resource name for write", "resource", req.ResourceName, "error", err)
 				return err
 			}
 			initialized = true
-			s.logger.Debug("starting write", "hash", dg.Hash, "size", dg.Size)
+			s.logger.Debug("starting write", "hash", dg.Hash, "size", dg.Size, "compressed", isCompressed)
 
-			// Start the Put operation in background now that we have the digest
+			// Start the Put operation in background
 			go func() {
-				errChan <- s.Store.Put(stream.Context(), dg, pr)
+				var input io.Reader = pr
+				if isCompressed {
+					decoder, err := zstd.NewReader(pr)
+					if err != nil {
+						errChan <- err
+						return
+					}
+					input = decoder
+					// Ensure decoder is closed if it implements Closer (zstd.Decoder has Close, but NewReader returns *Decoder which implements Read, but we need to check docs/implementation)
+					defer decoder.Close()
+				}
+				errChan <- s.Store.Put(stream.Context(), dg, input)
 			}()
 		}
 

@@ -16,6 +16,7 @@ go_library(
         "//pkg/storage",
         "@com_github_bazelbuild_remote_apis//build/bazel/remote/execution/v2:remote_execution_go_proto",
         "@com_github_bazelbuild_remote_apis//build/bazel/semver:semver_go_proto",
+        "@com_github_klauspost_compress//zstd",
         "@com_google_cloud_go_longrunning//autogen/longrunningpb",
         "@io_opentelemetry_go_otel//:otel",
         "@io_opentelemetry_go_otel//attribute",
@@ -30,7 +31,10 @@ go_library(
 
 go_test(
     name = "server_test",
-    srcs = ["bytestream_test.go"],
+    srcs = [
+        "bytestream_test.go",
+        "resource_name_test.go",
+    ],
     embed = [":server"],
     deps = [
         "//pkg/storage",

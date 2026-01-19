@@ -102,6 +102,9 @@ func (s *CapabilitiesServer) GetCapabilities(ctx context.Context, req *repb.GetC
 			DigestFunctions: []repb.DigestFunction_Value{
 				repb.DigestFunction_SHA256,
 			},
+			SupportedCompressors: []repb.Compressor_Value{
+				repb.Compressor_ZSTD,
+			},
 			ActionCacheUpdateCapabilities: &repb.ActionCacheUpdateCapabilities{
 				UpdateEnabled: true,
 			},
