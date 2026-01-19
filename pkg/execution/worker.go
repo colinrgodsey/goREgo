@@ -178,7 +178,12 @@ func (w *WorkerPool) execute(ctx context.Context, task *scheduler.Task) (*repb.A
 	if err := os.MkdirAll(execRoot, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create execroot: %w", err)
 	}
-	defer os.RemoveAll(baseDir) // Cleanup
+	defer func() {
+		// Cleanup execution environment
+		if err := os.RemoveAll(baseDir); err != nil {
+			w.logger.Error("failed to remove base dir", "error", err)
+		}
+	}()
 
 	// 5. Stage inputs to inputsDir
 	if err := w.stageInputs(ctx, inputsDir, inputRootDigest); err != nil {

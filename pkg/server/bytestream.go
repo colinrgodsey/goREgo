@@ -66,7 +66,7 @@ func (s *ByteStreamServer) Read(req *bytestream.ReadRequest, stream bytestream.B
 
 	rc, err := s.Store.Get(stream.Context(), dg)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if os.IsNotExist(err) || status.Code(err) == codes.NotFound {
 			s.logger.Debug("blob not found", "hash", dg.Hash, "size", dg.Size)
 			return status.Errorf(codes.NotFound, "blob not found: %v", dg)
 		}

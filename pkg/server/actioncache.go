@@ -27,7 +27,7 @@ func (s *ActionCacheServer) GetActionResult(ctx context.Context, req *repb.GetAc
 
 	res, err := s.Store.GetActionResult(ctx, dg)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if os.IsNotExist(err) || status.Code(err) == codes.NotFound {
 			return nil, status.Errorf(codes.NotFound, "action result not found: %v", dg)
 		}
 		return nil, status.Errorf(codes.Internal, "failed to get action result: %v", err)
