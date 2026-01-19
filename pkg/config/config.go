@@ -36,8 +36,9 @@ type SandboxConfig struct {
 }
 
 type BackingCacheConfig struct {
-	Target      string `mapstructure:"target"`
-	Compression string `mapstructure:"compression"` // "zstd" or empty
+	Target        string `mapstructure:"target"`
+	Compression   string `mapstructure:"compression"`     // "zstd" or empty
+	PutRetryCount int    `mapstructure:"put_retry_count"` // Number of retries for remote put operations
 }
 
 type TelemetryConfig struct {
@@ -71,6 +72,7 @@ func LoadConfig(configPath string) (*Config, error) {
 	v.SetDefault("execution.sandbox.writable_paths", []string{})
 	v.SetDefault("execution.sandbox.kill_delay", 5)
 	v.SetDefault("execution.sandbox.debug", false)
+	v.SetDefault("backing_cache.put_retry_count", 3)
 
 	// Env overrides
 	v.SetEnvPrefix("GOREGO")

@@ -160,6 +160,13 @@ func (s *RemoteStore) Put(ctx context.Context, digest Digest, data io.Reader) er
 			}
 
 			if err := stream.Send(req); err != nil {
+				// Server may have closed the stream early (blob already exists).
+				// Try to get the response to check if it was a successful commit.
+				if resp, recvErr := stream.CloseAndRecv(); recvErr == nil {
+					if s.isCommitSuccessful(resp, digest) {
+						return nil
+					}
+				}
 				return err
 			}
 			offset += int64(n)
@@ -177,16 +184,45 @@ func (s *RemoteStore) Put(ctx context.Context, digest Digest, data io.Reader) er
 			}
 
 			if err := stream.Send(req); err != nil {
+				// Same early-close handling for the final send
+				if resp, recvErr := stream.CloseAndRecv(); recvErr == nil {
+					if s.isCommitSuccessful(resp, digest) {
+						return nil
+					}
+				}
 				return err
 			}
-			_, err := stream.CloseAndRecv()
-			return err
+			resp, err := stream.CloseAndRecv()
+			if err != nil {
+				return err
+			}
+			// Verify the server committed the expected size
+			if !s.isCommitSuccessful(resp, digest) {
+				return fmt.Errorf("incomplete write: committed %d, expected %d", resp.CommittedSize, digest.Size)
+			}
+			return nil
 		}
 
 		if readErr != nil {
 			return readErr
 		}
 	}
+}
+
+// isCommitSuccessful checks if the WriteResponse indicates a successful commit.
+// For compressed uploads, CommittedSize varies by server implementation:
+//   - bazel-remote returns -1 for skipped writes (blob exists), or uncompressed size
+//   - Other servers may return the compressed size
+//
+// For uncompressed uploads, CommittedSize should equal the digest size.
+func (s *RemoteStore) isCommitSuccessful(resp *bytestream.WriteResponse, digest Digest) bool {
+	if s.compression == "zstd" {
+		// Compressed: accept any non-zero commit (compressed size varies)
+		// -1 means blob already existed (skipped write)
+		// >0 means data was written (could be compressed or uncompressed size)
+		return resp.CommittedSize != 0
+	}
+	return resp.CommittedSize == digest.Size
 }
 
 // ActionCache implementation

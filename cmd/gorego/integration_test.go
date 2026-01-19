@@ -32,7 +32,7 @@ func TestIntegration_CAS(t *testing.T) {
 	}
 
 	// Use two tiers
-	proxyStore := proxy.NewProxyStore(localStore1, localStore2)
+	proxyStore := proxy.NewProxyStore(localStore1, localStore2, 1)
 	casServer := server.NewContentAddressableStorageServer(proxyStore)
 
 	// Start listener on random port

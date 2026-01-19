@@ -152,7 +152,7 @@ func main() {
 		}
 	}
 
-	proxyStore := proxy.NewProxyStore(localStore, remoteStore)
+	proxyStore := proxy.NewProxyStore(localStore, remoteStore, cfg.BackingCache.PutRetryCount)
 
 	// 3.5 Scheduler and Execution (if enabled)
 	var sched *scheduler.Scheduler

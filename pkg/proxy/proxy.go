@@ -17,19 +17,24 @@ import (
 )
 
 type ProxyStore struct {
-	local  *storage.LocalStore
-	remote storage.BlobStore // Tier 2
-	group  singleflight.Group
-	tracer trace.Tracer
-	logger *slog.Logger
+	local         *storage.LocalStore
+	remote        storage.BlobStore // Tier 2
+	group         singleflight.Group
+	tracer        trace.Tracer
+	logger        *slog.Logger
+	putRetryCount int
 }
 
-func NewProxyStore(local *storage.LocalStore, remote storage.BlobStore) *ProxyStore {
+func NewProxyStore(local *storage.LocalStore, remote storage.BlobStore, putRetryCount int) *ProxyStore {
+	if putRetryCount < 1 {
+		putRetryCount = 1 // At least one attempt
+	}
 	return &ProxyStore{
-		local:  local,
-		remote: remote,
-		tracer: otel.Tracer("gorego/pkg/proxy"),
-		logger: slog.Default().With("component", "proxy"),
+		local:         local,
+		remote:        remote,
+		tracer:        otel.Tracer("gorego/pkg/proxy"),
+		logger:        slog.Default().With("component", "proxy"),
+		putRetryCount: putRetryCount,
 	}
 }
 
@@ -50,21 +55,40 @@ func (p *ProxyStore) PutFile(ctx context.Context, digest storage.Digest, path st
 		return err
 	}
 
-	// 2. Upload to remote asynchronously (or synchronously depending on consistency requirements)
-	// ProxyStore.Put does it synchronously/concurrently. We should match that.
-	f, err := os.Open(path)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
+	// 2. Upload to remote with retry logic
+	var lastErr error
+	for attempt := 1; attempt <= p.putRetryCount; attempt++ {
+		f, err := os.Open(path)
+		if err != nil {
+			span.RecordError(err)
+			return err
+		}
 
-	if err := p.remote.Put(ctx, digest, f); err != nil {
-		p.logger.Error("remote put file failed", "hash", digest.Hash, "error", err)
+		err = p.remote.Put(ctx, digest, f)
+		f.Close()
+
+		if err == nil {
+			if attempt > 1 {
+				p.logger.Info("remote put file succeeded after retry",
+					"hash", digest.Hash, "attempt", attempt)
+			}
+			return nil
+		}
+
+		lastErr = err
+		p.logger.Warn("remote put file failed",
+			"hash", digest.Hash, "attempt", attempt, "max_attempts", p.putRetryCount, "error", err)
 		span.RecordError(err)
-		return err
+
+		// Check if context is cancelled before retrying
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 	}
 
-	return nil
+	p.logger.Error("remote put file failed after all retries",
+		"hash", digest.Hash, "attempts", p.putRetryCount, "error", lastErr)
+	return lastErr
 }
 
 func (p *ProxyStore) Has(ctx context.Context, digest storage.Digest) (bool, error) {

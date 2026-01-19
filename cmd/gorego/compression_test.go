@@ -25,7 +25,7 @@ func TestIntegration_Compression(t *testing.T) {
 	tempDir := t.TempDir()
 	store, _ := storage.NewLocalStore(tempDir, false)
 	// Use NullStore as remote for simplicity
-	proxyStore := proxy.NewProxyStore(store, storage.NewNullStore())
+	proxyStore := proxy.NewProxyStore(store, storage.NewNullStore(), 1)
 
 	lis, err := net.Listen("tcp", "localhost:0")
 	if err != nil {

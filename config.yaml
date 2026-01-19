@@ -4,7 +4,7 @@ listen_addr: ":50051"
 # Local cache configuration
 local_cache_dir: "/tmp/gorego/cache"
 local_cache_max_size_gb: 100
-force_update_atime: false # If true, force update access time on cache hits.
+force_update_atime: false # If true, force update access time on cache hits. Necessary for storage mounts with "noatime".
 
 # Global log level for structured logging.
 log_level: "warn" # Options: debug, info, warn, error
@@ -12,6 +12,7 @@ log_level: "warn" # Options: debug, info, warn, error
 # Backing cache (Tier 2) configuration
 backing_cache:
   target: "" # Address of the backing cache server (e.g., "grpcs://some-remote.com:443")
+  put_retry_count: 3 # Number of retries for remote put operations (default: 3)
 
 # Telemetry configuration (metrics and tracing)
 telemetry:
