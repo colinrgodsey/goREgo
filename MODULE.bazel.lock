@@ -1393,7 +1393,7 @@
     "@@rules_oci+//oci:extensions.bzl%oci": {
       "general": {
         "bzlTransitiveDigest": "quk1Dfrpa9uVstfnqDufChSWBun9F78CNRPu7buU6G8=",
-        "usagesDigest": "QEotbVOvHWrECCCtf0TNzX+DkDxppfQTW4kca+DGwhY=",
+        "usagesDigest": "PPiK2jw8lzH6MDIY4pjfD6Hlj6iymeHuW2iJogUdPws=",
         "recordedFileInputs": {},
         "recordedDirentsInputs": {},
         "envVariables": {},
@@ -1403,9 +1403,9 @@
             "attributes": {
               "www_authenticate_challenges": {},
               "scheme": "https",
-              "registry": "index.docker.io",
-              "repository": "library/ubuntu",
-              "identifier": "24.04",
+              "registry": "ghcr.io",
+              "repository": "colinrgodsey/buildfarm-worker",
+              "identifier": "latest",
               "platform": "linux/amd64",
               "target_name": "ubuntu_image_linux_amd64",
               "bazel_tags": []
@@ -1416,9 +1416,9 @@
             "attributes": {
               "www_authenticate_challenges": {},
               "scheme": "https",
-              "registry": "index.docker.io",
-              "repository": "library/ubuntu",
-              "identifier": "24.04",
+              "registry": "ghcr.io",
+              "repository": "colinrgodsey/buildfarm-worker",
+              "identifier": "latest",
               "platform": "linux/arm64/v8",
               "target_name": "ubuntu_image_linux_arm64_v8",
               "bazel_tags": []
@@ -1430,9 +1430,9 @@
               "target_name": "ubuntu_image",
               "www_authenticate_challenges": {},
               "scheme": "https",
-              "registry": "index.docker.io",
-              "repository": "library/ubuntu",
-              "identifier": "24.04",
+              "registry": "ghcr.io",
+              "repository": "colinrgodsey/buildfarm-worker",
+              "identifier": "latest",
               "platforms": {
                 "@@platforms//cpu:x86_64": "@ubuntu_image_linux_amd64",
                 "@@platforms//cpu:arm64": "@ubuntu_image_linux_arm64_v8"

@@ -402,17 +402,23 @@ func (w *WorkerPool) stageFile(ctx context.Context, targetPath string, d digest.
 	return err
 }
 
-// buildInputMounts walks the inputs directory and returns a map of
-// source paths to target paths for bind mounting in the sandbox.
-func (w *WorkerPool) buildInputMounts(inputsDir, execRoot string) (map[string]string, error) {
-	mounts := make(map[string]string)
+// InputMounts contains the file mounts and symlinks to create in execRoot.
+type InputMounts struct {
+	FileMounts map[string]string // source -> target for files to hardlink/copy
+	Symlinks   map[string]string // target path -> symlink target
+}
+
+// buildInputMounts walks the inputs directory and returns mounts/symlinks to create.
+// It also creates all directories in execRoot that exist in inputsDir (including empty ones).
+func (w *WorkerPool) buildInputMounts(inputsDir, execRoot string) (*InputMounts, error) {
+	result := &InputMounts{
+		FileMounts: make(map[string]string),
+		Symlinks:   make(map[string]string),
+	}
 
 	err := filepath.WalkDir(inputsDir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
-		}
-		if d.IsDir() {
-			return nil // Skip directories, only mount files
 		}
 
 		relPath, err := filepath.Rel(inputsDir, path)
@@ -422,16 +428,45 @@ func (w *WorkerPool) buildInputMounts(inputsDir, execRoot string) (map[string]st
 
 		targetPath := filepath.Join(execRoot, relPath)
 
-		// Ensure target directory exists
+		// Check if this is a symlink (must check before IsDir, as IsDir follows symlinks)
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+
+		if info.Mode()&os.ModeSymlink != 0 {
+			// It's a symlink - record it to recreate later
+			linkTarget, err := os.Readlink(path)
+			if err != nil {
+				return fmt.Errorf("failed to read symlink %s: %w", path, err)
+			}
+			// Ensure parent directory exists
+			if err := os.MkdirAll(filepath.Dir(targetPath), 0755); err != nil {
+				return err
+			}
+			result.Symlinks[targetPath] = linkTarget
+			return nil
+		}
+
+		if d.IsDir() {
+			// Create all directories in execRoot (including empty ones)
+			// This is critical for actions that expect input directories to exist
+			if err := os.MkdirAll(targetPath, 0755); err != nil {
+				return err
+			}
+			return nil
+		}
+
+		// Regular file - ensure target directory exists
 		if err := os.MkdirAll(filepath.Dir(targetPath), 0755); err != nil {
 			return err
 		}
 
-		mounts[path] = targetPath
+		result.FileMounts[path] = targetPath
 		return nil
 	})
 
-	return mounts, err
+	return result, err
 }
 
 // createOutputDirectories creates output directories in execRoot and returns
@@ -475,8 +510,21 @@ func (w *WorkerPool) createOutputDirectories(execRoot string, command *repb.Comm
 
 // materializeInputsForUnsandboxed creates hard links or symlinks of inputs
 // in their target locations when running without sandbox.
-func (w *WorkerPool) materializeInputsForUnsandboxed(inputMounts map[string]string) error {
-	for source, target := range inputMounts {
+func (w *WorkerPool) materializeInputsForUnsandboxed(mounts *InputMounts) error {
+	// Create symlinks first (they may be referenced by other symlinks)
+	for target, linkTarget := range mounts.Symlinks {
+		// Ensure target directory exists
+		if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
+			return fmt.Errorf("failed to create target dir for symlink %s: %w", target, err)
+		}
+
+		if err := os.Symlink(linkTarget, target); err != nil {
+			return fmt.Errorf("failed to create symlink %s -> %s: %w", target, linkTarget, err)
+		}
+	}
+
+	// Create file links
+	for source, target := range mounts.FileMounts {
 		// Ensure target directory exists
 		if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
 			return fmt.Errorf("failed to create target dir for %s: %w", target, err)
@@ -515,7 +563,7 @@ type execResult struct {
 	duration time.Duration
 }
 
-func (w *WorkerPool) runCommand(ctx context.Context, execRoot string, inputMounts map[string]string, writablePaths []string, command *repb.Command, timeout *durationpb.Duration) (*execResult, error) {
+func (w *WorkerPool) runCommand(ctx context.Context, execRoot string, inputMounts *InputMounts, writablePaths []string, command *repb.Command, timeout *durationpb.Duration) (*execResult, error) {
 	ctx, span := w.tracer.Start(ctx, "worker.runCommand")
 	defer span.End()
 
@@ -547,9 +595,26 @@ func (w *WorkerPool) runCommand(ctx context.Context, execRoot string, inputMount
 		// Sandboxed execution
 		sandboxed = true
 
+		// Create symlinks in execRoot before sandbox (sandbox will see them)
+		for target, linkTarget := range inputMounts.Symlinks {
+			if err := os.Symlink(linkTarget, target); err != nil {
+				return nil, fmt.Errorf("failed to create symlink %s -> %s: %w", target, linkTarget, err)
+			}
+		}
+
+		// Create empty placeholder files for bind mount targets
+		// Bind mounts require the target file to exist
+		for _, target := range inputMounts.FileMounts {
+			f, err := os.Create(target)
+			if err != nil {
+				return nil, fmt.Errorf("failed to create mount target %s: %w", target, err)
+			}
+			f.Close()
+		}
+
 		spec := sandbox.WrapSpec{
 			ExecRoot:      workingDir,
-			InputMounts:   inputMounts,
+			InputMounts:   inputMounts.FileMounts,
 			WritablePaths: writablePaths,
 			Timeout:       cmdTimeout,
 			Command:       command.Arguments,

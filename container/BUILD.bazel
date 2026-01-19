@@ -21,7 +21,7 @@ oci_image(
     base = "@ubuntu_image_linux_amd64",
     cmd = [
         "apt-get update",
-        "apt-get install -y zip unzip build-essential",
+        "apt-get install -y zip unzip build-essential python3",
     ],
     entrypoint = ["/bin/gorego"],
     labels = {
