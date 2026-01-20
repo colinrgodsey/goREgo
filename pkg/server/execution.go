@@ -140,7 +140,7 @@ func (s *ExecutionServer) Execute(req *repb.ExecuteRequest, stream repb.Executio
 			)
 			s.logger.Debug("forwarding request to peer",
 				"peer", peer.Name,
-				"grpc_address", peer.GRPCAddress,
+				"grpc_address", peer.GrpcAddress,
 			)
 			return s.forwardExecute(ctx, req, stream, peer)
 		}
@@ -148,7 +148,7 @@ func (s *ExecutionServer) Execute(req *repb.ExecuteRequest, stream repb.Executio
 
 	span.SetAttributes(attribute.Bool("forwarded", false))
 
-	// Enqueue for local execution
+	// Determine if there is an originating node ID to preserve
 	op, err := s.scheduler.Enqueue(ctx, req.ActionDigest, req.SkipCacheLookup, originNodeID)
 	if err != nil {
 		span.RecordError(err)
@@ -184,8 +184,8 @@ func (s *ExecutionServer) Execute(req *repb.ExecuteRequest, stream repb.Executio
 }
 
 // forwardExecute forwards an Execute request to a peer node.
-func (s *ExecutionServer) forwardExecute(ctx context.Context, req *repb.ExecuteRequest, stream repb.Execution_ExecuteServer, peer *cluster.Peer) error {
-	conn, err := s.getOrCreateConn(ctx, peer.GRPCAddress)
+func (s *ExecutionServer) forwardExecute(ctx context.Context, req *repb.ExecuteRequest, stream repb.Execution_ExecuteServer, peer *cluster.NodeState) error {
+	conn, err := s.getOrCreateConn(ctx, peer.GrpcAddress)
 	if err != nil {
 		s.logger.Error("failed to connect to peer", "peer", peer.Name, "error", err)
 		// Fall back to local execution
@@ -331,8 +331,8 @@ func (s *ExecutionServer) WaitExecution(req *repb.WaitExecutionRequest, stream r
 }
 
 // forwardWaitExecution forwards a WaitExecution request to the peer that owns the operation.
-func (s *ExecutionServer) forwardWaitExecution(ctx context.Context, req *repb.WaitExecutionRequest, stream repb.Execution_WaitExecutionServer, peer *cluster.Peer) error {
-	conn, err := s.getOrCreateConn(ctx, peer.GRPCAddress)
+func (s *ExecutionServer) forwardWaitExecution(ctx context.Context, req *repb.WaitExecutionRequest, stream repb.Execution_WaitExecutionServer, peer *cluster.NodeState) error {
+	conn, err := s.getOrCreateConn(ctx, peer.GrpcAddress)
 	if err != nil {
 		return status.Errorf(codes.Unavailable, "failed to connect to node %s: %v", peer.Name, err)
 	}

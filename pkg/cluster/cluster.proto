@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+package cluster;
+
+option go_package = "github.com/colinrgodsey/goREgo/pkg/cluster";
+
+import "google/protobuf/timestamp.proto";
+
+// NodeState represents the state of a node in the cluster.
+message NodeState {
+  string name = 1;
+  string grpc_address = 2;
+  int32 pending_tasks = 3;
+  int32 max_concurrency = 4;
+  string tag = 5;
+  google.protobuf.Timestamp last_updated = 6;
+}

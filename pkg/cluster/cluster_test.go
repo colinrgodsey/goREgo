@@ -70,10 +70,10 @@ func TestNewManager(t *testing.T) {
 			}
 
 			state := m.GetLocalState()
-			if state.GRPCAddress != tt.grpcAddr {
-				t.Errorf("GetLocalState().GRPCAddress = %v, want %v", state.GRPCAddress, tt.grpcAddr)
+			if state.GrpcAddress != tt.grpcAddr {
+				t.Errorf("GetLocalState().GrpcAddress = %v, want %v", state.GrpcAddress, tt.grpcAddr)
 			}
-			if state.MaxConcurrency != tt.concurrency {
+			if int(state.MaxConcurrency) != tt.concurrency {
 				t.Errorf("GetLocalState().MaxConcurrency = %v, want %v", state.MaxConcurrency, tt.concurrency)
 			}
 		})
@@ -85,27 +85,25 @@ func TestSelectBestPeer(t *testing.T) {
 		name      string
 		localLoad int
 		localCap  int
-		peers     map[string]*Peer
+		peers     map[string]*NodeState
 		wantPeer  string // empty means local is best
 	}{
 		{
 			name:      "returns nil when local has capacity and no peers",
 			localLoad: 0,
 			localCap:  4,
-			peers:     map[string]*Peer{},
+			peers:     map[string]*NodeState{},
 			wantPeer:  "",
 		},
 		{
 			name:      "returns nil when local has lowest load",
 			localLoad: 1,
 			localCap:  4,
-			peers: map[string]*Peer{
+			peers: map[string]*NodeState{
 				"peer-1": {
-					NodeState: NodeState{
-						Name:           "peer-1",
-						PendingTasks:   2,
-						MaxConcurrency: 4,
-					},
+					Name:           "peer-1",
+					PendingTasks:   2,
+					MaxConcurrency: 4,
 				},
 			},
 			wantPeer: "",
@@ -114,13 +112,11 @@ func TestSelectBestPeer(t *testing.T) {
 			name:      "returns peer with lower load",
 			localLoad: 3,
 			localCap:  4,
-			peers: map[string]*Peer{
+			peers: map[string]*NodeState{
 				"peer-1": {
-					NodeState: NodeState{
-						Name:           "peer-1",
-						PendingTasks:   1,
-						MaxConcurrency: 4,
-					},
+					Name:           "peer-1",
+					PendingTasks:   1,
+					MaxConcurrency: 4,
 				},
 			},
 			wantPeer: "peer-1",
@@ -129,13 +125,11 @@ func TestSelectBestPeer(t *testing.T) {
 			name:      "returns peer with better ratio",
 			localLoad: 2,
 			localCap:  4, // ratio: 0.5
-			peers: map[string]*Peer{
+			peers: map[string]*NodeState{
 				"peer-1": {
-					NodeState: NodeState{
-						Name:           "peer-1",
-						PendingTasks:   2,
-						MaxConcurrency: 8, // ratio: 0.25
-					},
+					Name:           "peer-1",
+					PendingTasks:   2,
+					MaxConcurrency: 8, // ratio: 0.25
 				},
 			},
 			wantPeer: "peer-1",
@@ -144,20 +138,16 @@ func TestSelectBestPeer(t *testing.T) {
 			name:      "skips peers at capacity",
 			localLoad: 3,
 			localCap:  4,
-			peers: map[string]*Peer{
+			peers: map[string]*NodeState{
 				"peer-full": {
-					NodeState: NodeState{
-						Name:           "peer-full",
-						PendingTasks:   4,
-						MaxConcurrency: 4, // at capacity
-					},
+					Name:           "peer-full",
+					PendingTasks:   4,
+					MaxConcurrency: 4, // at capacity
 				},
 				"peer-available": {
-					NodeState: NodeState{
-						Name:           "peer-available",
-						PendingTasks:   1,
-						MaxConcurrency: 4,
-					},
+					Name:           "peer-available",
+					PendingTasks:   1,
+					MaxConcurrency: 4,
 				},
 			},
 			wantPeer: "peer-available",
@@ -166,13 +156,11 @@ func TestSelectBestPeer(t *testing.T) {
 			name:      "returns nil when all peers are full",
 			localLoad: 4,
 			localCap:  4,
-			peers: map[string]*Peer{
+			peers: map[string]*NodeState{
 				"peer-full": {
-					NodeState: NodeState{
-						Name:           "peer-full",
-						PendingTasks:   4,
-						MaxConcurrency: 4,
-					},
+					Name:           "peer-full",
+					PendingTasks:   4,
+					MaxConcurrency: 4,
 				},
 			},
 			wantPeer: "",
@@ -264,11 +252,9 @@ func TestGetPeerByNodeID(t *testing.T) {
 
 	// Add a peer
 	m.mu.Lock()
-	m.peers["peer-1"] = &Peer{
-		NodeState: NodeState{
-			Name:        "peer-1",
-			GRPCAddress: "10.0.0.1:50051",
-		},
+	m.peers["peer-1"] = &NodeState{
+		Name:        "peer-1",
+		GrpcAddress: "10.0.0.1:50051",
 	}
 	m.mu.Unlock()
 
@@ -301,8 +287,8 @@ func TestGetPeerByNodeID(t *testing.T) {
 			} else {
 				if got == nil {
 					t.Errorf("GetPeerByNodeID(%q) = nil, want non-nil", tt.nodeID)
-				} else if got.GRPCAddress != tt.wantAddr {
-					t.Errorf("GetPeerByNodeID(%q).GRPCAddress = %q, want %q", tt.nodeID, got.GRPCAddress, tt.wantAddr)
+				} else if got.GrpcAddress != tt.wantAddr {
+					t.Errorf("GetPeerByNodeID(%q).GrpcAddress = %q, want %q", tt.nodeID, got.GrpcAddress, tt.wantAddr)
 				}
 			}
 		})

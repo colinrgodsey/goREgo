@@ -2,7 +2,6 @@ package cluster
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net"
@@ -14,23 +13,9 @@ import (
 	"github.com/colinrgodsey/goREgo/pkg/config"
 	"github.com/google/uuid"
 	"github.com/hashicorp/memberlist"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
-
-// NodeState represents the state of a node in the cluster.
-// This is broadcast over the gossip layer.
-type NodeState struct {
-	Name           string `json:"name"`            // Unique Node ID
-	GRPCAddress    string `json:"grpc_address"`    // Host:Port for gRPC traffic
-	PendingTasks   int    `json:"pending_tasks"`   // Active + Queued tasks
-	MaxConcurrency int    `json:"max_concurrency"` // Capacity
-	Tag            string `json:"tag,omitempty"`   // Optional affinity tag
-}
-
-// Peer represents a remote node in the cluster.
-type Peer struct {
-	NodeState
-	LastUpdated time.Time
-}
 
 // LoadProvider is an interface for getting the current load of the local node.
 type LoadProvider interface {
@@ -49,7 +34,7 @@ type Manager struct {
 
 	list       *memberlist.Memberlist
 	localState *NodeState
-	peers      map[string]*Peer // NodeID -> Peer
+	peers      map[string]*NodeState // NodeID -> NodeState
 
 	broadcasts *memberlist.TransmitLimitedQueue
 }
@@ -78,10 +63,11 @@ func NewManager(cfg config.ClusterConfig, grpcAddress string, concurrency int, l
 		logger:       logger.With("component", "cluster"),
 		localState: &NodeState{
 			Name:           nodeID,
-			GRPCAddress:    grpcAddress,
-			MaxConcurrency: concurrency,
+			GrpcAddress:    grpcAddress,
+			MaxConcurrency: int32(concurrency),
+			LastUpdated:    timestamppb.Now(),
 		},
-		peers: make(map[string]*Peer),
+		peers: make(map[string]*NodeState),
 	}
 
 	return m, nil
@@ -211,32 +197,33 @@ func (m *Manager) NodeID() string {
 }
 
 // GetLocalState returns the current state of the local node.
-func (m *Manager) GetLocalState() NodeState {
+func (m *Manager) GetLocalState() *NodeState {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	state := *m.localState
+	state := proto.Clone(m.localState).(*NodeState)
 	if m.loadProvider != nil {
-		state.PendingTasks = m.loadProvider.GetPendingTaskCount()
+		state.PendingTasks = int32(m.loadProvider.GetPendingTaskCount())
 	}
+	state.LastUpdated = timestamppb.Now()
 	return state
 }
 
 // GetPeers returns all known peers (excluding self).
-func (m *Manager) GetPeers() []Peer {
+func (m *Manager) GetPeers() []*NodeState {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	peers := make([]Peer, 0, len(m.peers))
+	peers := make([]*NodeState, 0, len(m.peers))
 	for _, p := range m.peers {
-		peers = append(peers, *p)
+		peers = append(peers, proto.Clone(p).(*NodeState))
 	}
 	return peers
 }
 
 // SelectBestPeer returns the peer with the lowest load that has capacity.
 // Returns nil if the local node is the best choice or no peers have capacity.
-func (m *Manager) SelectBestPeer() *Peer {
+func (m *Manager) SelectBestPeer() *NodeState {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
@@ -250,12 +237,12 @@ func (m *Manager) SelectBestPeer() *Peer {
 	localHasCapacity := localLoad < localCapacity
 
 	// Find the best peer
-	var bestPeer *Peer
+	var bestPeer *NodeState
 	bestLoad := localLoad
 	bestCapacity := localCapacity
 
 	for _, peer := range m.peers {
-		peerHasCapacity := peer.PendingTasks < peer.MaxConcurrency
+		peerHasCapacity := int(peer.PendingTasks) < int(peer.MaxConcurrency)
 		if !peerHasCapacity {
 			continue
 		}
@@ -267,8 +254,8 @@ func (m *Manager) SelectBestPeer() *Peer {
 
 		if peerLoadRatio < bestLoadRatio {
 			bestPeer = peer
-			bestLoad = peer.PendingTasks
-			bestCapacity = peer.MaxConcurrency
+			bestLoad = int(peer.PendingTasks)
+			bestCapacity = int(peer.MaxConcurrency)
 		}
 	}
 
@@ -281,12 +268,12 @@ func (m *Manager) SelectBestPeer() *Peer {
 }
 
 // GetPeerByNodeID returns a peer by its node ID.
-func (m *Manager) GetPeerByNodeID(nodeID string) *Peer {
+func (m *Manager) GetPeerByNodeID(nodeID string) *NodeState {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
 	if peer, ok := m.peers[nodeID]; ok {
-		return peer
+		return proto.Clone(peer).(*NodeState)
 	}
 	return nil
 }
@@ -298,7 +285,7 @@ func (m *Manager) BroadcastState() {
 	}
 
 	state := m.GetLocalState()
-	data, err := json.Marshal(state)
+	data, err := proto.Marshal(state)
 	if err != nil {
 		m.logger.Error("failed to marshal state", "error", err)
 		return
@@ -312,7 +299,7 @@ func (m *Manager) BroadcastState() {
 // NodeMeta returns metadata to include in the memberlist node state.
 func (m *Manager) NodeMeta(limit int) []byte {
 	state := m.GetLocalState()
-	data, err := json.Marshal(state)
+	data, err := proto.Marshal(state)
 	if err != nil {
 		m.logger.Error("failed to marshal node metadata", "error", err)
 		return nil
@@ -331,7 +318,7 @@ func (m *Manager) NotifyMsg(msg []byte) {
 	}
 
 	var state NodeState
-	if err := json.Unmarshal(msg, &state); err != nil {
+	if err := proto.Unmarshal(msg, &state); err != nil {
 		m.logger.Debug("failed to unmarshal message", "error", err)
 		return
 	}
@@ -346,24 +333,20 @@ func (m *Manager) NotifyMsg(msg []byte) {
 	if existing, ok := m.peers[state.Name]; ok {
 		// If the new address is a bind address but we have a valid existing address,
 		// preserve the existing host and update the port.
-		if host, port, err := net.SplitHostPort(state.GRPCAddress); err == nil {
+		if host, port, err := net.SplitHostPort(state.GrpcAddress); err == nil {
 			if host == "" || host == "0.0.0.0" || host == "::" {
-				if existingHost, _, err := net.SplitHostPort(existing.GRPCAddress); err == nil {
-					state.GRPCAddress = net.JoinHostPort(existingHost, port)
+				if existingHost, _, err := net.SplitHostPort(existing.GrpcAddress); err == nil {
+					state.GrpcAddress = net.JoinHostPort(existingHost, port)
 				}
 			}
 		}
-
-		existing.NodeState = state
-		existing.LastUpdated = time.Now()
+		// Since state is a new unmarshaled object, we can just replace existing value
+		// BUT we might want to keep some non-transient local tracking if we had any.
+		// For now we just replace.
+		m.peers[state.Name] = &state
 	} else {
 		// New peer via broadcast (unlikely before Join, but possible)
-		// We can't fix the address here without the source IP.
-		// It will be fixed when NotifyJoin/NotifyUpdate is called.
-		m.peers[state.Name] = &Peer{
-			NodeState:   state,
-			LastUpdated: time.Now(),
-		}
+		m.peers[state.Name] = &state
 	}
 }
 
@@ -396,30 +379,28 @@ func (m *Manager) NotifyJoin(node *memberlist.Node) {
 	}
 
 	var state NodeState
-	if err := json.Unmarshal(node.Meta, &state); err != nil {
+	if err := proto.Unmarshal(node.Meta, &state); err != nil {
 		m.logger.Debug("failed to unmarshal join metadata", "node", node.Name, "error", err)
 		state = NodeState{
 			Name:        node.Name,
-			GRPCAddress: fmt.Sprintf("%s:%d", node.Addr.String(), node.Port),
+			GrpcAddress: fmt.Sprintf("%s:%d", node.Addr.String(), node.Port),
+			LastUpdated: timestamppb.Now(),
 		}
 	}
 
 	// If the gRPC address is a bind address (0.0.0.0, ::, or empty host),
 	// replace it with the node's gossip IP address.
-	if host, port, err := net.SplitHostPort(state.GRPCAddress); err == nil {
+	if host, port, err := net.SplitHostPort(state.GrpcAddress); err == nil {
 		if host == "" || host == "0.0.0.0" || host == "::" {
-			state.GRPCAddress = net.JoinHostPort(node.Addr.String(), port)
+			state.GrpcAddress = net.JoinHostPort(node.Addr.String(), port)
 		}
 	}
 
 	m.mu.Lock()
-	m.peers[node.Name] = &Peer{
-		NodeState:   state,
-		LastUpdated: time.Now(),
-	}
+	m.peers[node.Name] = &state
 	m.mu.Unlock()
 
-	m.logger.Info("node joined cluster", "node", node.Name, "grpc_address", state.GRPCAddress)
+	m.logger.Info("node joined cluster", "node", node.Name, "grpc_address", state.GrpcAddress)
 }
 
 // NotifyLeave is called when a node leaves the cluster.
@@ -442,29 +423,21 @@ func (m *Manager) NotifyUpdate(node *memberlist.Node) {
 	}
 
 	var state NodeState
-	if err := json.Unmarshal(node.Meta, &state); err != nil {
+	if err := proto.Unmarshal(node.Meta, &state); err != nil {
 		m.logger.Debug("failed to unmarshal update metadata", "node", node.Name, "error", err)
 		return
 	}
 
 	// Apply the same fix as NotifyJoin
-	if host, port, err := net.SplitHostPort(state.GRPCAddress); err == nil {
+	if host, port, err := net.SplitHostPort(state.GrpcAddress); err == nil {
 		if host == "" || host == "0.0.0.0" || host == "::" {
-			state.GRPCAddress = net.JoinHostPort(node.Addr.String(), port)
+			state.GrpcAddress = net.JoinHostPort(node.Addr.String(), port)
 		}
 	}
 
 	m.mu.Lock()
-	if existing, ok := m.peers[node.Name]; ok {
-		existing.NodeState = state
-		existing.LastUpdated = time.Now()
-	} else {
-		// Should have been created by NotifyJoin, but handle gracefully
-		m.peers[node.Name] = &Peer{
-			NodeState:   state,
-			LastUpdated: time.Now(),
-		}
-	}
+	// Update regardless of existence
+	m.peers[node.Name] = &state
 	m.mu.Unlock()
 }
 

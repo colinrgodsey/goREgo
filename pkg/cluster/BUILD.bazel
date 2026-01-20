@@ -1,14 +1,18 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
+load("@rules_proto//proto:defs.bzl", "proto_library")
 
 go_library(
     name = "cluster",
     srcs = ["cluster.go"],
+    embed = [":cluster_go_proto"],
     importpath = "github.com/colinrgodsey/goREgo/pkg/cluster",
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/config",
         "@com_github_google_uuid//:uuid",
         "@com_github_hashicorp_memberlist//:memberlist",
+        "@org_golang_google_protobuf//proto",
     ],
 )
 
@@ -17,4 +21,25 @@ go_test(
     srcs = ["cluster_test.go"],
     embed = [":cluster"],
     deps = ["//pkg/config"],
+)
+
+proto_library(
+    name = "clusterpb_proto",
+    srcs = ["cluster.proto"],
+    visibility = ["//visibility:public"],
+    deps = ["@com_google_protobuf//:timestamp_proto"],
+)
+
+go_proto_library(
+    name = "clusterpb_go_proto",
+    importpath = "github.com/colinrgodsey/goREgo/pkg/cluster/clusterpb",
+    proto = ":clusterpb_proto",
+    visibility = ["//visibility:public"],
+)
+
+go_proto_library(
+    name = "cluster_go_proto",
+    importpath = "github.com/colinrgodsey/goREgo/pkg/cluster",
+    proto = ":clusterpb_proto",
+    visibility = ["//visibility:public"],
 )

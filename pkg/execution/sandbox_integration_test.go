@@ -144,7 +144,7 @@ func runActionAndWait(t *testing.T, wp *WorkerPool, sched *scheduler.Scheduler, 
 	}()
 
 	// Enqueue action
-	op, err := sched.Enqueue(ctx, actionDigest.ToProto(), false)
+	op, err := sched.Enqueue(ctx, actionDigest.ToProto(), false, "")
 	if err != nil {
 		t.Fatalf("Failed to enqueue action: %v", err)
 	}

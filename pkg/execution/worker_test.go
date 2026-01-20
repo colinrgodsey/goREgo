@@ -89,7 +89,7 @@ func TestWorkerPool_Execute(t *testing.T) {
 	}()
 
 	// Enqueue the action
-	op, err := sched.Enqueue(ctx, actionDigest.ToProto(), false)
+	op, err := sched.Enqueue(ctx, actionDigest.ToProto(), false, "")
 	if err != nil {
 		t.Fatalf("Failed to enqueue action: %v", err)
 	}
@@ -229,7 +229,7 @@ func TestWorkerPool_ExecuteWithOutputFile(t *testing.T) {
 	}()
 
 	// Enqueue the action
-	op, err := sched.Enqueue(ctx, actionDigest.ToProto(), false)
+	op, err := sched.Enqueue(ctx, actionDigest.ToProto(), false, "")
 	if err != nil {
 		t.Fatalf("Failed to enqueue action: %v", err)
 	}
@@ -373,7 +373,7 @@ func TestWorkerPool_NonZeroExitCode(t *testing.T) {
 	}()
 
 	// Enqueue the action
-	op, err := sched.Enqueue(ctx, actionDigest.ToProto(), false)
+	op, err := sched.Enqueue(ctx, actionDigest.ToProto(), false, "")
 	if err != nil {
 		t.Fatalf("Failed to enqueue action: %v", err)
 	}
@@ -506,7 +506,7 @@ func TestWorkerPool_InputMaterialization(t *testing.T) {
 	}()
 
 	// Enqueue the action
-	op, err := sched.Enqueue(ctx, actionDigest.ToProto(), false)
+	op, err := sched.Enqueue(ctx, actionDigest.ToProto(), false, "")
 	if err != nil {
 		t.Fatalf("Failed to enqueue action: %v", err)
 	}
