@@ -6,6 +6,7 @@ go_library(
     importpath = "github.com/colinrgodsey/goREgo/cmd/gorego",
     visibility = ["//visibility:private"],
     deps = [
+        "//pkg/cluster",
         "//pkg/config",
         "//pkg/execution",
         "//pkg/janitor",

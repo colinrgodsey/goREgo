@@ -16,6 +16,7 @@ type Config struct {
 	BackingCache BackingCacheConfig `mapstructure:"backing_cache"`
 	Telemetry    TelemetryConfig    `mapstructure:"telemetry"`
 	Execution    ExecutionConfig    `mapstructure:"execution"`
+	Cluster      ClusterConfig      `mapstructure:"cluster"`
 }
 
 type ExecutionConfig struct {
@@ -46,9 +47,15 @@ type TelemetryConfig struct {
 	TracingEndpoint string `mapstructure:"tracing_endpoint"`
 }
 
+// ClusterConfig holds configuration for the distributed cluster mesh.
 type ClusterConfig struct {
-	JoinPeers  []string `mapstructure:"join_peers"`
-	GossipPort int      `mapstructure:"gossip_port"`
+	Enabled        bool     `mapstructure:"enabled"`
+	NodeID         string   `mapstructure:"node_id"`          // Unique node identifier (auto-generated if empty)
+	BindPort       int      `mapstructure:"bind_port"`        // Gossip port for memberlist (default: 7946)
+	AdvertiseAddr  string   `mapstructure:"advertise_addr"`   // Address to advertise to peers (auto-detect if empty)
+	DiscoveryMode  string   `mapstructure:"discovery_mode"`   // "list" or "dns"
+	JoinPeers      []string `mapstructure:"join_peers"`       // Static peer addresses (used when discovery_mode == "list")
+	DNSServiceName string   `mapstructure:"dns_service_name"` // DNS hostname to resolve (used when discovery_mode == "dns")
 }
 
 func LoadConfig(configPath string) (*Config, error) {
@@ -58,7 +65,9 @@ func LoadConfig(configPath string) (*Config, error) {
 	v.SetDefault("listen_addr", ":50051")
 	v.SetDefault("local_cache_dir", "/tmp/gorego/cache")
 	v.SetDefault("local_cache_max_size_gb", 100)
-	v.SetDefault("cluster.gossip_port", 7946)
+	v.SetDefault("cluster.enabled", false)
+	v.SetDefault("cluster.bind_port", 7946)
+	v.SetDefault("cluster.discovery_mode", "list")
 	v.SetDefault("force_update_atime", false)
 	v.SetDefault("log_level", "warn")
 	v.SetDefault("telemetry.metrics_addr", ":9090")

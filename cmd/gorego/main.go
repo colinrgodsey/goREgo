@@ -10,12 +10,14 @@ import (
 	"net/http/pprof"
 	"os"
 	"os/signal"
+	"runtime"
 	"strings"
 	"syscall"
 	"time"
 
 	longrunning "cloud.google.com/go/longrunning/autogen/longrunningpb"
 	repb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
+	"github.com/colinrgodsey/goREgo/pkg/cluster"
 	"github.com/colinrgodsey/goREgo/pkg/config"
 	"github.com/colinrgodsey/goREgo/pkg/execution"
 	"github.com/colinrgodsey/goREgo/pkg/janitor"
@@ -154,10 +156,56 @@ func main() {
 
 	proxyStore := proxy.NewProxyStore(localStore, remoteStore, cfg.BackingCache.PutRetryCount)
 
-	// 3.5 Scheduler and Execution (if enabled)
+	// 3.5 Cluster Manager (if enabled)
+	var clusterManager *cluster.Manager
+	if cfg.Cluster.Enabled {
+		concurrency := cfg.Execution.Concurrency
+		if concurrency == 0 {
+			concurrency = runtime.NumCPU()
+		}
+
+		var err error
+		clusterManager, err = cluster.NewManager(cfg.Cluster, cfg.ListenAddr, concurrency, nil, logger)
+		if err != nil {
+			slog.Error("failed to create cluster manager", "error", err)
+			os.Exit(1)
+		}
+
+		if err := clusterManager.Start(ctx); err != nil {
+			slog.Error("failed to start cluster", "error", err)
+			os.Exit(1)
+		}
+
+		// Run periodic state broadcasts
+		g.Go(func() error {
+			if err := clusterManager.Run(ctx); err != nil {
+				if !errors.Is(err, context.Canceled) {
+					return err
+				}
+			}
+			return nil
+		})
+
+		slog.Info("Cluster enabled",
+			"node_id", clusterManager.NodeID(),
+			"bind_port", cfg.Cluster.BindPort,
+			"discovery_mode", cfg.Cluster.DiscoveryMode,
+		)
+	}
+
+	// 3.6 Scheduler and Execution (if enabled)
 	var sched *scheduler.Scheduler
 	if cfg.Execution.Enabled {
-		sched = scheduler.NewScheduler(cfg.Execution.QueueSize)
+		nodeID := ""
+		if clusterManager != nil {
+			nodeID = clusterManager.NodeID()
+		}
+		sched = scheduler.NewScheduler(cfg.Execution.QueueSize, nodeID)
+
+		// Wire up load provider for cluster
+		if clusterManager != nil {
+			clusterManager.SetLoadProvider(sched)
+		}
 
 		// Start scheduler cleanup goroutine
 		g.Go(func() error {
@@ -208,7 +256,7 @@ func main() {
 
 	// Register Execution and Operations (if enabled)
 	if cfg.Execution.Enabled && sched != nil {
-		repb.RegisterExecutionServer(grpcServer, server.NewExecutionServer(sched, proxyStore))
+		repb.RegisterExecutionServer(grpcServer, server.NewExecutionServer(sched, proxyStore, clusterManager))
 		longrunning.RegisterOperationsServer(grpcServer, server.NewOperationsServer(sched))
 	}
 
@@ -236,10 +284,17 @@ func main() {
 		// 1. Mark unhealthy
 		healthServer.SetServingStatus("", grpc_health_v1.HealthCheckResponse_NOT_SERVING)
 
-		// 2. Stop gRPC (blocks)
+		// 2. Leave cluster gracefully
+		if clusterManager != nil {
+			if err := clusterManager.Stop(5 * time.Second); err != nil {
+				slog.Error("failed to leave cluster", "error", err)
+			}
+		}
+
+		// 3. Stop gRPC (blocks)
 		grpcServer.GracefulStop()
 
-		// 3. Stop other background tasks
+		// 4. Stop other background tasks
 		cancel()
 	case <-ctx.Done():
 		// Error in group

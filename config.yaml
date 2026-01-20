@@ -34,6 +34,19 @@ execution:
     debug: false # Enable debug logging for the sandbox
 
 # Cluster configuration (for distributed deployment)
-# cluster:
-#   join_peers: [] # List of peer addresses to join the cluster
-#   gossip_port: 7946 # Port for gossip communication
+cluster:
+  enabled: false # Enable cluster mode for distributed execution
+  # node_id: "" # Unique node identifier (auto-generated from hostname if empty)
+  bind_port: 7946 # Port for gossip protocol (memberlist)
+  # advertise_addr: "" # Address to advertise to peers (auto-detect if empty)
+
+  # Discovery mode: "list" for static peers, "dns" for DNS-based discovery
+  discovery_mode: "list"
+
+  # Static peer list (used when discovery_mode == "list")
+  join_peers: []
+  # join_peers: ["10.0.0.1:7946", "10.0.0.2:7946"]
+
+  # DNS service name (used when discovery_mode == "dns")
+  # Useful for Kubernetes Headless Services
+  # dns_service_name: "gorego-headless.default.svc.cluster.local"

@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/bazelbuild/remote-apis-sdks/go/pkg/digest"
@@ -168,7 +169,9 @@ func (w *WorkerPool) execute(ctx context.Context, task *scheduler.Task) (*repb.A
 
 	// 4. Create working directory structure
 	// New layout: baseDir/{inputs/, execroot/}
-	baseDir := filepath.Join(w.buildRoot, task.OperationID)
+	// Sanitize operation ID for use as directory name (replace ':' from clustering format nodeID:uuid)
+	safeDirName := strings.ReplaceAll(task.OperationID, ":", "_")
+	baseDir := filepath.Join(w.buildRoot, safeDirName)
 	inputsDir := filepath.Join(baseDir, "inputs")
 	execRoot := filepath.Join(baseDir, "execroot")
 

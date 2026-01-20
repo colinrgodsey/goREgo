@@ -53,16 +53,24 @@ type Scheduler struct {
 
 	// Retention duration for completed operations
 	retention time.Duration
+
+	// Node ID prefix for operation IDs (for cluster routing)
+	nodeID string
+
+	// Count of currently executing operations
+	executingCount int
 }
 
-// NewScheduler creates a new Scheduler with the given queue size.
-func NewScheduler(queueSize int) *Scheduler {
+// NewScheduler creates a new Scheduler with the given queue size and node ID.
+// The nodeID is used to prefix operation IDs for cluster routing.
+func NewScheduler(queueSize int, nodeID string) *Scheduler {
 	return &Scheduler{
 		operations:  make(map[string]*OperationStatus),
 		subscribers: make(map[string][]chan *OperationStatus),
 		taskQueue:   make(chan *Task, queueSize),
 		queueSize:   queueSize,
 		retention:   10 * time.Minute,
+		nodeID:      nodeID,
 	}
 }
 
@@ -70,6 +78,10 @@ func NewScheduler(queueSize int) *Scheduler {
 // Returns RESOURCE_EXHAUSTED if the queue is full.
 func (s *Scheduler) Enqueue(ctx context.Context, actionDigest *repb.Digest, skipCache bool) (*longrunning.Operation, error) {
 	operationID := uuid.New().String()
+	// Prefix with node ID for cluster routing (format: nodeID:uuid)
+	if s.nodeID != "" {
+		operationID = fmt.Sprintf("%s:%s", s.nodeID, operationID)
+	}
 	name := fmt.Sprintf("operations/%s", operationID)
 	now := time.Now()
 
@@ -132,6 +144,13 @@ func (s *Scheduler) UpdateState(name string, state OperationState, metadata *rep
 		return
 	}
 
+	// Track executing count transitions
+	if op.State != StateExecuting && state == StateExecuting {
+		s.executingCount++
+	} else if op.State == StateExecuting && state != StateExecuting {
+		s.executingCount--
+	}
+
 	op.State = state
 	op.Metadata = metadata
 	op.UpdatedAt = time.Now()
@@ -147,6 +166,11 @@ func (s *Scheduler) Complete(name string, result *repb.ExecuteResponse) {
 	op, ok := s.operations[name]
 	if !ok {
 		return
+	}
+
+	// Track executing count if transitioning from executing
+	if op.State == StateExecuting {
+		s.executingCount--
 	}
 
 	op.State = StateCompleted
@@ -165,6 +189,11 @@ func (s *Scheduler) Fail(name string, err error) {
 	op, ok := s.operations[name]
 	if !ok {
 		return
+	}
+
+	// Track executing count if transitioning from executing
+	if op.State == StateExecuting {
+		s.executingCount--
 	}
 
 	op.State = StateCompleted
@@ -341,4 +370,40 @@ func (s *Scheduler) Run(ctx context.Context) error {
 			return ctx.Err()
 		}
 	}
+}
+
+// GetPendingTaskCount returns the number of pending tasks (queued + executing).
+// This is used by the cluster manager to report load.
+func (s *Scheduler) GetPendingTaskCount() int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	// queued tasks in channel + currently executing
+	return len(s.taskQueue) + s.executingCount
+}
+
+// NodeID returns the node ID used for operation ID prefixing.
+func (s *Scheduler) NodeID() string {
+	return s.nodeID
+}
+
+// ParseOperationNodeID extracts the node ID from an operation name.
+// Returns the nodeID and the base operation ID.
+// Format: operations/nodeID:uuid or operations/uuid (legacy)
+func ParseOperationNodeID(operationName string) (nodeID, operationID string) {
+	// Strip "operations/" prefix
+	name := operationName
+	if len(name) > 11 && name[:11] == "operations/" {
+		name = name[11:]
+	}
+
+	// Check for node ID prefix (nodeID:uuid)
+	for i := 0; i < len(name); i++ {
+		if name[i] == ':' {
+			return name[:i], name[i+1:]
+		}
+	}
+
+	// No node ID prefix (legacy format)
+	return "", name
 }

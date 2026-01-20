@@ -1,0 +1,27 @@
+{{- $clusterEnabled := .Values.config.cluster.enabled -}}
+{{- if eq $clusterEnabled nil -}}
+{{- $clusterEnabled = gt (int .Values.replicaCount) 1 -}}
+{{- end -}}
+{{- if $clusterEnabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "gorego.fullname" . }}-headless
+  labels:
+    {{- include "gorego.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  clusterIP: None
+  publishNotReadyAddresses: true
+  ports:
+    - port: {{ .Values.config.cluster.bind_port }}
+      targetPort: gossip
+      protocol: TCP
+      name: gossip
+    - port: 50051
+      targetPort: grpc
+      protocol: TCP
+      name: grpc
+  selector:
+    {{- include "gorego.selectorLabels" . | nindent 4 }}
+{{- end }}

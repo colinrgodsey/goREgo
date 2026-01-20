@@ -7,7 +7,7 @@ pkg_tar(
         "//cmd/gorego",
         "//src/main/tools:linux-sandbox",
     ],
-    package_dir = "/bin",
+    package_dir = "/gorego",
 )
 
 pkg_tar(
@@ -19,11 +19,7 @@ pkg_tar(
 oci_image(
     name = "container",
     base = "@ubuntu_image_linux_amd64",
-    cmd = [
-        "apt-get update",
-        "apt-get install -y zip unzip build-essential python3",
-    ],
-    entrypoint = ["/bin/gorego"],
+    entrypoint = ["/gorego/gorego"],
     labels = {
         "org.opencontainers.image.source": "https://github.com/colinrgodsey/goREgo",
         "org.opencontainers.image.description": "GoREGo - Bazel Remote Execution",

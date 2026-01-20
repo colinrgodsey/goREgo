@@ -2,6 +2,8 @@
 # This is a YAML-formatted file.
 # Declare variables to be passed into your templates.
 
+# Number of replicas in the StatefulSet.
+# When > 1, clustering is automatically configured.
 replicaCount: 1
 
 image:
@@ -62,9 +64,24 @@ config:
     build_root: "/tmp/build"
     queue_size: 1000
     sandbox:
-      enabled: true
-      binary_path: "/bin/linux-sandbox"
+      enabled: false
+      binary_path: "/gorego/linux-sandbox"
       network_isolation: true
       writable_paths: []
       kill_delay: 5
       debug: false
+  # Cluster configuration for distributed execution.
+  # Automatically enabled when replicaCount > 1.
+  cluster:
+    # Explicitly enable/disable clustering.
+    # If not set, clustering is auto-enabled when replicaCount > 1.
+    enabled: null
+    # Gossip port for memberlist (SWIM protocol)
+    bind_port: 7946
+    # Discovery mode: "dns" (recommended for k8s) or "list"
+    discovery_mode: "dns"
+    # DNS service name is auto-generated from the headless service.
+    # Override if using a custom service name.
+    dns_service_name: ""
+    # Static peer list (only used when discovery_mode is "list")
+    join_peers: []

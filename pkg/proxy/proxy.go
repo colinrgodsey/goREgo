@@ -49,6 +49,21 @@ func (p *ProxyStore) PutFile(ctx context.Context, digest storage.Digest, path st
 	))
 	defer span.End()
 
+	// Use singleflight to deduplicate concurrent puts for the same blob.
+	// This is safe for PutFile since the source path can be re-read if needed.
+	_, err, shared := p.group.Do("put:"+digest.Hash, func() (interface{}, error) {
+		return nil, p.putFileImpl(ctx, digest, path, span)
+	})
+
+	if shared {
+		span.SetAttributes(attribute.Bool("singleflight.shared", true))
+		p.logger.Debug("putFile deduplicated via singleflight", "hash", digest.Hash)
+	}
+
+	return err
+}
+
+func (p *ProxyStore) putFileImpl(ctx context.Context, digest storage.Digest, path string, span trace.Span) error {
 	// 1. Put to local (hardlink optimized)
 	if err := p.local.PutFile(ctx, digest, path); err != nil {
 		span.RecordError(err)
@@ -169,6 +184,34 @@ func (p *ProxyStore) Put(ctx context.Context, digest storage.Digest, data io.Rea
 
 	p.logger.Debug("put starting", "hash", digest.Hash, "size", digest.Size)
 
+	// Early check: if blob already exists locally, skip the put.
+	// In a write-through model with consistent backing, this is safe.
+	if ok, _ := p.local.Has(ctx, digest); ok {
+		span.SetAttributes(attribute.Bool("cache.hit", true))
+		p.logger.Debug("put skipped, blob already exists", "hash", digest.Hash)
+		// Drain the reader since caller expects us to consume it
+		_, _ = io.Copy(io.Discard, data)
+		return nil
+	}
+
+	// Use singleflight to deduplicate concurrent puts for the same blob.
+	// The first caller performs the actual put; others wait and return the result.
+	_, err, shared := p.group.Do("put:"+digest.Hash, func() (interface{}, error) {
+		return nil, p.putImpl(ctx, digest, data, span)
+	})
+
+	if shared {
+		span.SetAttributes(attribute.Bool("singleflight.shared", true))
+		p.logger.Debug("put deduplicated via singleflight", "hash", digest.Hash)
+		// We waited for another goroutine to complete the put.
+		// Drain our reader since we didn't use it.
+		_, _ = io.Copy(io.Discard, data)
+	}
+
+	return err
+}
+
+func (p *ProxyStore) putImpl(ctx context.Context, digest storage.Digest, data io.Reader, span trace.Span) error {
 	// Write-through: Tee data to both local and remote.
 	// We rely on "Hard Dependency" logic: if either fails, the operation fails.
 	// Since remote is authoritative, we stream to it concurrently.
@@ -268,16 +311,25 @@ func (p *ProxyStore) UpdateActionResult(ctx context.Context, digest storage.Dige
 	))
 	defer span.End()
 
-	// Write-through
-	if ac, ok := p.remote.(storage.ActionCache); ok {
-		if err := ac.UpdateActionResult(ctx, digest, result); err != nil {
-			span.RecordError(err)
-			return err
+	// Use singleflight to deduplicate concurrent updates for the same action.
+	_, err, shared := p.group.Do("ac:update:"+digest.Hash, func() (interface{}, error) {
+		// Write-through
+		if ac, ok := p.remote.(storage.ActionCache); ok {
+			if err := ac.UpdateActionResult(ctx, digest, result); err != nil {
+				span.RecordError(err)
+				return nil, err
+			}
 		}
-	} else {
 		// If remote is not an ActionCache, strictly speaking we might want to error or just skip.
 		// Given we want unified behavior, and NullStore implements it, we should generally expect it to exist.
 		// But if someone passes a simple BlobStore mock, this prevents panic.
+		return nil, p.local.UpdateActionResult(ctx, digest, result)
+	})
+
+	if shared {
+		span.SetAttributes(attribute.Bool("singleflight.shared", true))
+		p.logger.Debug("updateActionResult deduplicated via singleflight", "hash", digest.Hash)
 	}
-	return p.local.UpdateActionResult(ctx, digest, result)
+
+	return err
 }

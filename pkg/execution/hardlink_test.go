@@ -25,7 +25,7 @@ func TestWorkerPool_InputHardlinking(t *testing.T) {
 		t.Fatalf("Failed to create local store: %v", err)
 	}
 
-	sched := scheduler.NewScheduler(100)
+	sched := scheduler.NewScheduler(100, "")
 	cfg := config.ExecutionConfig{
 		Enabled:     true,
 		Concurrency: 2,
@@ -156,7 +156,7 @@ func TestWorkerPool_InputHardlinking_Executable(t *testing.T) {
 		t.Fatalf("Failed to create local store: %v", err)
 	}
 
-	sched := scheduler.NewScheduler(100)
+	sched := scheduler.NewScheduler(100, "")
 	cfg := config.ExecutionConfig{
 		Enabled:     true,
 		Concurrency: 2,

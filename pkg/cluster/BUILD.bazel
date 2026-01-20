@@ -1,0 +1,20 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "cluster",
+    srcs = ["cluster.go"],
+    importpath = "github.com/colinrgodsey/goREgo/pkg/cluster",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//pkg/config",
+        "@com_github_google_uuid//:uuid",
+        "@com_github_hashicorp_memberlist//:memberlist",
+    ],
+)
+
+go_test(
+    name = "cluster_test",
+    srcs = ["cluster_test.go"],
+    embed = [":cluster"],
+    deps = ["//pkg/config"],
+)

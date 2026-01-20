@@ -1,4 +1,8 @@
 {{- if .Values.statefulset.enabled }}
+{{- $clusterEnabled := .Values.config.cluster.enabled -}}
+{{- if eq $clusterEnabled nil -}}
+{{- $clusterEnabled = gt (int .Values.replicaCount) 1 -}}
+{{- end -}}
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
@@ -7,7 +11,11 @@ metadata:
     {{- include "gorego.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.replicaCount }}
+  {{- if $clusterEnabled }}
+  serviceName: {{ include "gorego.fullname" . }}-headless
+  {{- else }}
   serviceName: {{ include "gorego.fullname" . }}
+  {{- end }}
   selector:
     matchLabels:
       {{- include "gorego.selectorLabels" . | nindent 6 }}
@@ -37,15 +45,23 @@ spec:
             privileged: true
           {{- end }}
           {{- if ne (int .Values.nice) 0 }}
-          command: ["nice", "-n", "{{ .Values.nice }}", "/bin/gorego"]
+          command: ["nice", "-n", "{{ .Values.nice }}", "/gorego/gorego"]
           {{- else }}
-          command: ["/bin/gorego"]
+          command: ["/gorego/gorego"]
           {{- end }}
           args: ["--config", "/etc/gorego/config.yaml"]
           ports:
             - name: grpc
               containerPort: 50051
               protocol: TCP
+            {{- if $clusterEnabled }}
+            - name: gossip
+              containerPort: {{ .Values.config.cluster.bind_port }}
+              protocol: TCP
+            - name: gossip-udp
+              containerPort: {{ .Values.config.cluster.bind_port }}
+              protocol: UDP
+            {{- end }}
           livenessProbe:
             tcpSocket:
               port: grpc
@@ -110,4 +126,16 @@ data:
         writable_paths: []
         kill_delay: {{ .Values.config.execution.sandbox.kill_delay }}
         debug: {{ .Values.config.execution.sandbox.debug }}
+    cluster:
+      enabled: {{ $clusterEnabled }}
+      bind_port: {{ .Values.config.cluster.bind_port }}
+      discovery_mode: {{ .Values.config.cluster.discovery_mode | quote }}
+      {{- if .Values.config.cluster.dns_service_name }}
+      dns_service_name: {{ .Values.config.cluster.dns_service_name | quote }}
+      {{- else if $clusterEnabled }}
+      dns_service_name: "{{ include "gorego.fullname" . }}-headless.{{ .Release.Namespace }}.svc.cluster.local"
+      {{- else }}
+      dns_service_name: ""
+      {{- end }}
+      join_peers: {{ .Values.config.cluster.join_peers | toJson }}
 {{- end }}
