@@ -105,7 +105,12 @@ func (w *WorkerPool) runWorker(ctx context.Context, workerID int) error {
 		}
 
 		logger.Info("processing task", "operation_id", task.OperationID)
-		w.executeTask(ctx, task)
+		
+		// Use a detached context for execution so that shutdown (canceling ctx)
+		// doesn't abort the running task. The task will still respect its own
+		// timeouts (enforced in execute()).
+		execCtx := context.WithoutCancel(ctx)
+		w.executeTask(execCtx, task)
 	}
 }
 
