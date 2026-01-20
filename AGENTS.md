@@ -116,7 +116,7 @@ This project uses **Bazel** for building and testing, and **Gazelle** for genera
     * Wrap errors with context: `fmt.Errorf("failed to process item %s: %w", id, err)`.
     * Don't just return `err`; explain *what* failed.
     * Use error wrapping (`fmt.Errorf`) with public Err types when possible for deep error typing.
-    * As a cleanup step before making a commit, run `go fmt ./...` and `buildifier -r .` for the project.
+    * As a cleanup step after finishing a task, run `go fmt ./...` and `buildifier -r .` for the project.
 
 ---
 
@@ -141,16 +141,22 @@ The core logic resides in `pkg/`. Here is the breakdown of responsibilities:
     *   **`LocalStore`**: Disk-based storage engine for the local cache. Implements `LocalBlobStore` interface for filesystem path access (`BlobPath`, `PutFile`).
     *   **`RemoteStore`**: Client adapter for communicating with the external backing cache (Tier 2).
 *   **`pkg/telemetry`**: Observability initialization. Sets up Prometheus metrics, OpenTelemetry tracing exporters, and structured logging.
+*   **`pkg/cluster`**: Distributed cluster management using `hashicorp/memberlist` (SWIM protocol).
+    *   **Peer Discovery**: Auto-discovery via DNS (headless service) or static list.
+    *   **Load Balancing**: Broadcasts node load state and selects the best peer for task offloading (load shedding).
+    *   **Node State**: Manages `NodeState` protobuf with capacity and pending task tracking.
 *   **`pkg/scheduler`**: Task queue and operation state management for remote execution.
     *   In-memory operation tracking (operation ID → status)
     *   State machine: QUEUED → EXECUTING → COMPLETED
     *   Subscription system for streaming operation updates to clients
+    *   **Cluster Routing**: Supports node-prefixed operation IDs (e.g., `node-1:uuid`) to route status requests to the originating node.
 *   **`pkg/execution`**: Worker pool for action execution.
     *   `WorkerPool` manages N concurrent workers (default: `runtime.NumCPU()`)
     *   Input staging via hard links from CAS (`stageInputs` → `stageDirectory` → `stageFile`)
     *   Command execution via `os/exec` (wrapped with `linux-sandbox` when enabled)
     *   Output collection via hard links back to CAS (`uploadOutputs` → `uploadFile`)
     *   Directory lifecycle: create → stage → execute → collect → cleanup
+    *   **Graceful Draining**: Uses detached contexts to ensure running tasks complete even during shutdown.
 *   **`pkg/sandbox`**: Linux sandbox wrapper for hermetic execution isolation.
     *   Constructs `linux-sandbox` command line with bind mounts and namespace isolation
     *   Read-only input protection via mount namespaces
