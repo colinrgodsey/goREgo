@@ -1,12 +1,15 @@
 package cluster
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"log"
 	"log/slog"
 	"net"
 	"os"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -16,6 +19,8 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
+
+const broadcastPeriod = 500 * time.Millisecond
 
 // LoadProvider is an interface for getting the current load of the local node.
 type LoadProvider interface {
@@ -89,7 +94,7 @@ func (m *Manager) Start(ctx context.Context) error {
 	mlConfig.Events = m
 
 	// Reduce logging noise
-	mlConfig.Logger = nil
+	mlConfig.Logger = log.New(&logAdapter{logger: m.logger}, "", 0)
 
 	list, err := memberlist.Create(mlConfig)
 	if err != nil {
@@ -319,7 +324,7 @@ func (m *Manager) NotifyMsg(msg []byte) {
 
 	var state NodeState
 	if err := proto.Unmarshal(msg, &state); err != nil {
-		m.logger.Debug("failed to unmarshal message", "error", err)
+		m.logger.Info("failed to unmarshal message", "error", err)
 		return
 	}
 
@@ -380,7 +385,7 @@ func (m *Manager) NotifyJoin(node *memberlist.Node) {
 
 	var state NodeState
 	if err := proto.Unmarshal(node.Meta, &state); err != nil {
-		m.logger.Debug("failed to unmarshal join metadata", "node", node.Name, "error", err)
+		m.logger.Info("failed to unmarshal join metadata", "node", node.Name, "error", err)
 		state = NodeState{
 			Name:        node.Name,
 			GrpcAddress: fmt.Sprintf("%s:%d", node.Addr.String(), node.Port),
@@ -424,7 +429,7 @@ func (m *Manager) NotifyUpdate(node *memberlist.Node) {
 
 	var state NodeState
 	if err := proto.Unmarshal(node.Meta, &state); err != nil {
-		m.logger.Debug("failed to unmarshal update metadata", "node", node.Name, "error", err)
+		m.logger.Info("failed to unmarshal update metadata", "node", node.Name, "error", err)
 		return
 	}
 
@@ -459,7 +464,7 @@ func (b *stateBroadcast) Finished() {}
 
 // Run starts a background goroutine that periodically broadcasts state.
 func (m *Manager) Run(ctx context.Context) error {
-	ticker := time.NewTicker(5 * time.Second)
+	ticker := time.NewTicker(broadcastPeriod)
 	defer ticker.Stop()
 
 	for {
@@ -501,4 +506,38 @@ func (m *Manager) HealthyMembers() []string {
 	}
 	sort.Strings(names)
 	return names
+}
+
+// logAdapter adapts memberlist logs to slog.
+type logAdapter struct {
+	logger *slog.Logger
+}
+
+func (l *logAdapter) Write(p []byte) (n int, err error) {
+	msg := string(bytes.TrimSpace(p))
+
+	level := slog.LevelInfo
+	if strings.Contains(msg, "[DEBUG]") {
+		level = slog.LevelDebug
+		msg = strings.Replace(msg, "[DEBUG]", "", 1)
+	} else if strings.Contains(msg, "[WARN]") {
+		level = slog.LevelWarn
+		msg = strings.Replace(msg, "[WARN]", "", 1)
+	} else if strings.Contains(msg, "[ERR]") || strings.Contains(msg, "[ERROR]") {
+		level = slog.LevelError
+		msg = strings.Replace(msg, "[ERR]", "", 1)
+		msg = strings.Replace(msg, "[ERROR]", "", 1)
+	} else if strings.Contains(msg, "[INFO]") {
+		level = slog.LevelInfo
+		msg = strings.Replace(msg, "[INFO]", "", 1)
+	}
+
+	msg = strings.TrimSpace(msg)
+	msg = strings.TrimPrefix(msg, "memberlist:")
+	msg = strings.TrimSpace(msg)
+
+	// Log with the correct level (slog will filter based on configured level)
+	l.logger.Log(context.Background(), level, msg, "subcomponent", "memberlist")
+
+	return len(p), nil
 }

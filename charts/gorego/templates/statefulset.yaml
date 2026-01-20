@@ -3,6 +3,11 @@
 {{- if eq $clusterEnabled nil -}}
 {{- $clusterEnabled = gt (int .Values.replicaCount) 1 -}}
 {{- end -}}
+
+{{- if and $clusterEnabled (empty .Values.config.backing_cache.target) -}}
+{{- fail "Clustering is enabled (replicaCount > 1), but backing_cache.target is not configured. A shared backing cache is required for distributed execution." -}}
+{{- end -}}
+
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
