@@ -21,9 +21,9 @@ import (
 )
 
 const (
-	// forwardedMetadataKey marks requests that have been forwarded from another node.
-	// Forwarded requests must execute locally to prevent forwarding loops.
-	forwardedMetadataKey = "x-gorego-forwarded"
+	// forwardedFromMetadataKey carries the node ID of the original requester.
+	// Its presence also indicates that the request has been forwarded (preventing loops).
+	forwardedFromMetadataKey = "x-gorego-forwarded-from"
 )
 
 // ExecutionServer implements the REAPI Execution service.
@@ -97,7 +97,7 @@ func (s *ExecutionServer) Execute(req *repb.ExecuteRequest, stream repb.Executio
 			if result, err := s.actionCache.GetActionResult(ctx, actionDigest); err == nil {
 				span.SetAttributes(attribute.Bool("cache.hit", true))
 				// Return cached result
-				op, err := s.scheduler.Enqueue(ctx, req.ActionDigest, true)
+				op, err := s.scheduler.Enqueue(ctx, req.ActionDigest, true, "")
 				if err != nil {
 					return err
 				}
@@ -117,17 +117,21 @@ func (s *ExecutionServer) Execute(req *repb.ExecuteRequest, stream repb.Executio
 		span.SetAttributes(attribute.Bool("cache.hit", false))
 	}
 
-	// Check if we should forward to a peer (cluster mode)
-	// Only consider forwarding if this request wasn't already forwarded to us.
-	// This prevents forwarding loops between nodes.
+	// Determine if this is a forwarded request and get the originator
 	isForwarded := false
+	originNodeID := ""
 	if md, ok := metadata.FromIncomingContext(ctx); ok {
-		if vals := md.Get(forwardedMetadataKey); len(vals) > 0 {
+		if vals := md.Get(forwardedFromMetadataKey); len(vals) > 0 {
 			isForwarded = true
-			span.SetAttributes(attribute.Bool("received_forwarded", true))
+			originNodeID = vals[0]
+			span.SetAttributes(
+				attribute.Bool("received_forwarded", true),
+				attribute.String("origin_node", originNodeID),
+			)
 		}
 	}
 
+	// Only forward if not already forwarded (prevent loops)
 	if s.clusterManager != nil && !isForwarded {
 		if peer := s.clusterManager.SelectBestPeer(); peer != nil {
 			span.SetAttributes(
@@ -145,7 +149,7 @@ func (s *ExecutionServer) Execute(req *repb.ExecuteRequest, stream repb.Executio
 	span.SetAttributes(attribute.Bool("forwarded", false))
 
 	// Enqueue for local execution
-	op, err := s.scheduler.Enqueue(ctx, req.ActionDigest, req.SkipCacheLookup)
+	op, err := s.scheduler.Enqueue(ctx, req.ActionDigest, req.SkipCacheLookup, originNodeID)
 	if err != nil {
 		span.RecordError(err)
 		return err
@@ -188,9 +192,13 @@ func (s *ExecutionServer) forwardExecute(ctx context.Context, req *repb.ExecuteR
 		return s.executeLocally(ctx, req, stream)
 	}
 
-	// Mark this request as forwarded to prevent the peer from forwarding it again.
+	// Mark this request as forwarded by adding our ID as the originator.
 	// This ensures single-hop forwarding only.
-	forwardCtx := metadata.AppendToOutgoingContext(ctx, forwardedMetadataKey, "1")
+	md := metadata.Pairs()
+	if s.clusterManager != nil {
+		md.Set(forwardedFromMetadataKey, s.clusterManager.NodeID())
+	}
+	forwardCtx := metadata.NewOutgoingContext(ctx, md)
 
 	client := repb.NewExecutionClient(conn)
 	peerStream, err := client.Execute(forwardCtx, req)
@@ -217,7 +225,15 @@ func (s *ExecutionServer) forwardExecute(ctx context.Context, req *repb.ExecuteR
 
 // executeLocally runs the action on the local node.
 func (s *ExecutionServer) executeLocally(ctx context.Context, req *repb.ExecuteRequest, stream repb.Execution_ExecuteServer) error {
-	op, err := s.scheduler.Enqueue(ctx, req.ActionDigest, req.SkipCacheLookup)
+	// Determine if there is an originating node ID to preserve
+	originNodeID := ""
+	if md, ok := metadata.FromIncomingContext(ctx); ok {
+		if vals := md.Get(forwardedFromMetadataKey); len(vals) > 0 {
+			originNodeID = vals[0]
+		}
+	}
+
+	op, err := s.scheduler.Enqueue(ctx, req.ActionDigest, req.SkipCacheLookup, originNodeID)
 	if err != nil {
 		return err
 	}

@@ -349,6 +349,7 @@ func (w *WorkerPool) stageDirectory(ctx context.Context, targetDir string, dirDi
 func (w *WorkerPool) stageFile(ctx context.Context, targetPath string, d digest.Digest, executable bool) error {
 	if lbs, ok := w.blobStore.(storage.LocalBlobStore); ok {
 		// Ensure it's local. Get will fetch it if using ProxyStore.
+		// TOOD: will this make sure the file is actually hydrated correctly?
 		rc, err := w.blobStore.Get(ctx, d)
 		if err != nil {
 			return err
@@ -384,6 +385,7 @@ func (w *WorkerPool) stageFile(ctx context.Context, targetPath string, d digest.
 		w.logger.Warn("failed to hardlink, falling back to copy", "src", path, "dst", targetPath, "error", err)
 	}
 
+	// TODO: deduplicate with above?
 	rc, err := w.blobStore.Get(ctx, d)
 	if err != nil {
 		return err
@@ -392,7 +394,7 @@ func (w *WorkerPool) stageFile(ctx context.Context, targetPath string, d digest.
 
 	perm := os.FileMode(0644)
 	if executable {
-		perm = 0755
+		perm = os.FileMode(0755)
 	}
 
 	f, err := os.OpenFile(targetPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, perm)

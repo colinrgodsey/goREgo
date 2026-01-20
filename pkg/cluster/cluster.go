@@ -121,7 +121,7 @@ func (m *Manager) Start(ctx context.Context) error {
 	// Join existing peers
 	peers, err := m.discoverPeers(ctx)
 	if err != nil {
-		m.logger.Warn("peer discovery failed", "error", err)
+		return fmt.Errorf("peer discovery failed: %w", err)
 	}
 
 	if len(peers) > 0 {
@@ -167,9 +167,32 @@ func (m *Manager) discoverDNS(ctx context.Context) ([]string, error) {
 		return nil, fmt.Errorf("dns_service_name is required for DNS discovery")
 	}
 
-	ips, err := net.DefaultResolver.LookupIPAddr(ctx, m.cfg.DNSServiceName)
+	var ips []net.IPAddr
+	var err error
+
+	// Retry up to 5 times (5 seconds) to handle transient DNS failures during startup
+	for i := 0; i < 5; i++ {
+		ips, err = net.DefaultResolver.LookupIPAddr(ctx, m.cfg.DNSServiceName)
+		if err == nil {
+			break
+		}
+
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+
+		m.logger.Warn("DNS lookup failed, retrying...", "service", m.cfg.DNSServiceName, "attempt", i+1, "error", err)
+
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(1 * time.Second):
+			continue
+		}
+	}
+
 	if err != nil {
-		return nil, fmt.Errorf("DNS lookup failed for %s: %w", m.cfg.DNSServiceName, err)
+		return nil, fmt.Errorf("DNS lookup failed for %s after retries: %w", m.cfg.DNSServiceName, err)
 	}
 
 	var peers []string
@@ -321,9 +344,22 @@ func (m *Manager) NotifyMsg(msg []byte) {
 	defer m.mu.Unlock()
 
 	if existing, ok := m.peers[state.Name]; ok {
+		// If the new address is a bind address but we have a valid existing address,
+		// preserve the existing host and update the port.
+		if host, port, err := net.SplitHostPort(state.GRPCAddress); err == nil {
+			if host == "" || host == "0.0.0.0" || host == "::" {
+				if existingHost, _, err := net.SplitHostPort(existing.GRPCAddress); err == nil {
+					state.GRPCAddress = net.JoinHostPort(existingHost, port)
+				}
+			}
+		}
+
 		existing.NodeState = state
 		existing.LastUpdated = time.Now()
 	} else {
+		// New peer via broadcast (unlikely before Join, but possible)
+		// We can't fix the address here without the source IP.
+		// It will be fixed when NotifyJoin/NotifyUpdate is called.
 		m.peers[state.Name] = &Peer{
 			NodeState:   state,
 			LastUpdated: time.Now(),
@@ -368,6 +404,14 @@ func (m *Manager) NotifyJoin(node *memberlist.Node) {
 		}
 	}
 
+	// If the gRPC address is a bind address (0.0.0.0, ::, or empty host),
+	// replace it with the node's gossip IP address.
+	if host, port, err := net.SplitHostPort(state.GRPCAddress); err == nil {
+		if host == "" || host == "0.0.0.0" || host == "::" {
+			state.GRPCAddress = net.JoinHostPort(node.Addr.String(), port)
+		}
+	}
+
 	m.mu.Lock()
 	m.peers[node.Name] = &Peer{
 		NodeState:   state,
@@ -403,10 +447,23 @@ func (m *Manager) NotifyUpdate(node *memberlist.Node) {
 		return
 	}
 
+	// Apply the same fix as NotifyJoin
+	if host, port, err := net.SplitHostPort(state.GRPCAddress); err == nil {
+		if host == "" || host == "0.0.0.0" || host == "::" {
+			state.GRPCAddress = net.JoinHostPort(node.Addr.String(), port)
+		}
+	}
+
 	m.mu.Lock()
 	if existing, ok := m.peers[node.Name]; ok {
 		existing.NodeState = state
 		existing.LastUpdated = time.Now()
+	} else {
+		// Should have been created by NotifyJoin, but handle gracefully
+		m.peers[node.Name] = &Peer{
+			NodeState:   state,
+			LastUpdated: time.Now(),
+		}
 	}
 	m.mu.Unlock()
 }

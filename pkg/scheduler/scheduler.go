@@ -76,11 +76,19 @@ func NewScheduler(queueSize int, nodeID string) *Scheduler {
 
 // Enqueue creates a new operation and adds it to the task queue.
 // Returns RESOURCE_EXHAUSTED if the queue is full.
-func (s *Scheduler) Enqueue(ctx context.Context, actionDigest *repb.Digest, skipCache bool) (*longrunning.Operation, error) {
+// nodeIDOverride can be used to specify the originating node ID for cluster forwarding.
+func (s *Scheduler) Enqueue(ctx context.Context, actionDigest *repb.Digest, skipCache bool, nodeIDOverride string) (*longrunning.Operation, error) {
 	operationID := uuid.New().String()
+
+	// Determine node ID prefix: override > configured > none
+	prefix := s.nodeID
+	if nodeIDOverride != "" {
+		prefix = nodeIDOverride
+	}
+
 	// Prefix with node ID for cluster routing (format: nodeID:uuid)
-	if s.nodeID != "" {
-		operationID = fmt.Sprintf("%s:%s", s.nodeID, operationID)
+	if prefix != "" {
+		operationID = fmt.Sprintf("%s:%s", prefix, operationID)
 	}
 	name := fmt.Sprintf("operations/%s", operationID)
 	now := time.Now()

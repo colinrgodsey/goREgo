@@ -78,7 +78,7 @@ func TestEnqueue_WithNodeIDPrefix(t *testing.T) {
 		SizeBytes: 100,
 	}
 
-	op, err := s.Enqueue(ctx, digest, false)
+	op, err := s.Enqueue(ctx, digest, false, "")
 	if err != nil {
 		t.Fatalf("Enqueue() error = %v", err)
 	}
@@ -99,7 +99,7 @@ func TestEnqueue_WithoutNodeIDPrefix(t *testing.T) {
 		SizeBytes: 100,
 	}
 
-	op, err := s.Enqueue(ctx, digest, false)
+	op, err := s.Enqueue(ctx, digest, false, "")
 	if err != nil {
 		t.Fatalf("Enqueue() error = %v", err)
 	}
@@ -125,7 +125,7 @@ func TestGetPendingTaskCount(t *testing.T) {
 		Hash:      "abc123",
 		SizeBytes: 100,
 	}
-	op, err := s.Enqueue(ctx, digest, false)
+	op, err := s.Enqueue(ctx, digest, false, "")
 	if err != nil {
 		t.Fatalf("Enqueue() error = %v", err)
 	}
@@ -177,8 +177,8 @@ func TestExecutingCountTracking(t *testing.T) {
 	}
 
 	// Create two operations
-	op1, _ := s.Enqueue(ctx, digest, false)
-	op2, _ := s.Enqueue(ctx, digest, false)
+	op1, _ := s.Enqueue(ctx, digest, false, "")
+	op2, _ := s.Enqueue(ctx, digest, false, "")
 
 	// Dequeue both
 	s.Dequeue(ctx)
