@@ -22,6 +22,8 @@ import (
 
 const broadcastPeriod = 500 * time.Millisecond
 
+// TODO: periodic recheck of DNS and rejoining
+
 // LoadProvider is an interface for getting the current load of the local node.
 type LoadProvider interface {
 	GetPendingTaskCount() int

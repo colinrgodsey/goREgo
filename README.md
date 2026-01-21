@@ -6,7 +6,7 @@
 
 ## **🚀 Deployment Modes**
 
-### *1\. go, RE, go\!* (The Local Hero)
+### *1\. go, RE, go\!*
 
 Simple, single-node execution.  
 Perfect for local testing or simple setups. Run it directly via bazel run or deploy using the default Helm single-node configuration. No external dependencies required.
@@ -15,16 +15,23 @@ Perfect for local testing or simple setups. Run it directly via bazel run or dep
 $ bazel run //cmd/gorego
 ```
 
-### *2\. go, REs, go\!* (The Clustered Beast)
+```shell
+$ helm install gorego ./charts/gorego/
+```
+
+### *2\. go, REs, go\!*
 
 Full Kubernetes cluster with backing cache.  
 Why reinvent the wheel? We believe in delegating storage to the experts. This mode connects your execution cluster to an authoritative backing cache ([bazel-remote](https://github.com/buchgr/bazel-remote), [Google Cloud Storage](https://bazel.build/remote/caching#cloud-storage), [buildbuddy](https://www.buildbuddy.io/), and more).
 
 ```shell
-$ helm install gorego ./charts/gorego/
+$ helm install gorego \
+  --set replicaCount=3 \
+  --set config.backing_cache.target="grpc://bazel-remote:9092" \
+  ./charts/gorego/
 ```
 
-### *3\. go, REs, go differently\!* (The Power User)
+### *3\. go, REs, go differently\!*
 
 Total control.  
 Full customization of the deployment via Helm and custom deploy containers.

@@ -6,6 +6,8 @@
 # When > 1, clustering is automatically configured.
 replicaCount: 1
 
+# TODO: prometheus scrape annotations
+
 image:
   repository: ghcr.io/colinrgodsey/gorego
   pullPolicy: IfNotPresent
