@@ -20,7 +20,10 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-// TODO: periodic recheck of DNS and rejoining
+const (
+	maxBroadcastInterval = 10 * time.Millisecond
+	dnsRecheckInterval   = 30 * time.Second
+)
 
 // LoadProvider is an interface for getting the current load of the local node.
 type LoadProvider interface {
@@ -472,8 +475,12 @@ func (m *Manager) Run(ctx context.Context) error {
 	defer ticker.Stop()
 
 	// Check load changes frequently to propagate updates fast when busy
-	loadTicker := time.NewTicker(10 * time.Millisecond)
+	loadTicker := time.NewTicker(maxBroadcastInterval)
 	defer loadTicker.Stop()
+
+	// Periodic DNS recheck
+	dnsTicker := time.NewTicker(dnsRecheckInterval)
+	defer dnsTicker.Stop()
 
 	var lastLoad int
 	if m.loadProvider != nil {
@@ -496,10 +503,55 @@ func (m *Manager) Run(ctx context.Context) error {
 					}
 				}
 			}
+		case <-dnsTicker.C:
+			if m.cfg.DiscoveryMode == "dns" {
+				peers, err := m.discoverDNS(ctx)
+				if err != nil {
+					m.logger.Warn("periodic DNS discovery failed", "error", err)
+					continue
+				}
+
+				// Filter out already known peers
+				newPeers := m.filterKnownPeers(peers)
+
+				if len(newPeers) > 0 {
+					n, err := m.list.Join(newPeers)
+					if err != nil {
+						m.logger.Warn("failed to join new peers from DNS", "error", err, "joined", n)
+					} else if n > 0 {
+						m.logger.Info("joined new peers from DNS", "count", n, "peers", newPeers)
+					}
+				}
+			}
 		case <-ctx.Done():
 			return ctx.Err()
 		}
 	}
+}
+
+// filterKnownPeers filters out peers that are already known memberlist members.
+func (m *Manager) filterKnownPeers(candidates []string) []string {
+	if m.list == nil {
+		return candidates
+	}
+
+	known := make(map[string]struct{})
+	for _, member := range m.list.Members() {
+		// Construct address string matching discoverDNS format
+		addr := net.JoinHostPort(member.Addr.String(), fmt.Sprintf("%d", member.Port))
+		known[addr] = struct{}{}
+	}
+
+	var newPeers []string
+	for _, candidate := range candidates {
+		// Normalize candidate just in case (though discoverDNS uses JoinHostPort logic manually)
+		// discoverDNS: fmt.Sprintf("%s:%d", ip.IP.String(), m.cfg.BindPort)
+		// We trust simple string comparison here as both come from IP+Port
+		if _, exists := known[candidate]; !exists {
+			newPeers = append(newPeers, candidate)
+		}
+	}
+	return newPeers
 }
 
 // Members returns the number of known cluster members (including self).
