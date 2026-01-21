@@ -24,6 +24,7 @@ oci_image(
         "org.opencontainers.image.source": "https://github.com/colinrgodsey/goREgo",
         "org.opencontainers.image.description": "GoREGo - Bazel Remote Execution",
     },
+    tags = ["manual"],
     tars = [
         ":bins",
         ":config",
