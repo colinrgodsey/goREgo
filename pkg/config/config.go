@@ -2,6 +2,7 @@ package config
 
 import (
 	"strings"
+	"time"
 
 	"github.com/spf13/viper"
 )
@@ -59,8 +60,9 @@ type ClusterConfig struct {
 	BindPort       int      `mapstructure:"bind_port"`        // Gossip port for memberlist (default: 7946)
 	AdvertiseAddr  string   `mapstructure:"advertise_addr"`   // Address to advertise to peers (auto-detect if empty)
 	DiscoveryMode  string   `mapstructure:"discovery_mode"`   // "list" or "dns"
-	JoinPeers      []string `mapstructure:"join_peers"`       // Static peer addresses (used when discovery_mode == "list")
-	DNSServiceName string   `mapstructure:"dns_service_name"` // DNS hostname to resolve (used when discovery_mode == "dns")
+	JoinPeers      []string      `mapstructure:"join_peers"`       // Static peer addresses (used when discovery_mode == "list")
+	DNSServiceName string        `mapstructure:"dns_service_name"` // DNS hostname to resolve (used when discovery_mode == "dns")
+	BroadcastPeriod time.Duration `mapstructure:"broadcast_period"` // How often to broadcast state
 }
 
 func LoadConfig(configPath string) (*Config, error) {
@@ -74,6 +76,7 @@ func LoadConfig(configPath string) (*Config, error) {
 	v.SetDefault("cluster.enabled", false)
 	v.SetDefault("cluster.bind_port", 7946)
 	v.SetDefault("cluster.discovery_mode", "list")
+	v.SetDefault("cluster.broadcast_period", "500ms")
 	v.SetDefault("force_update_atime", false)
 	v.SetDefault("log_level", "warn")
 	v.SetDefault("telemetry.metrics_addr", ":9090")

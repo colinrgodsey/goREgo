@@ -20,8 +20,6 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-const broadcastPeriod = 500 * time.Millisecond
-
 // TODO: periodic recheck of DNS and rejoining
 
 // LoadProvider is an interface for getting the current load of the local node.
@@ -466,13 +464,38 @@ func (b *stateBroadcast) Finished() {}
 
 // Run starts a background goroutine that periodically broadcasts state.
 func (m *Manager) Run(ctx context.Context) error {
-	ticker := time.NewTicker(broadcastPeriod)
+	period := m.cfg.BroadcastPeriod
+	if period <= 0 {
+		period = 500 * time.Millisecond
+	}
+	ticker := time.NewTicker(period)
 	defer ticker.Stop()
+
+	// Check load changes frequently to propagate updates fast when busy
+	loadTicker := time.NewTicker(10 * time.Millisecond)
+	defer loadTicker.Stop()
+
+	var lastLoad int
+	if m.loadProvider != nil {
+		lastLoad = m.loadProvider.GetPendingTaskCount()
+	}
 
 	for {
 		select {
 		case <-ticker.C:
 			m.BroadcastState()
+		case <-loadTicker.C:
+			if m.loadProvider != nil {
+				currentLoad := m.loadProvider.GetPendingTaskCount()
+				if currentLoad != lastLoad {
+					lastLoad = currentLoad
+					// If load changed and is non-zero, broadcast immediately (throttled by ticker)
+					// This helps peers avoid overloading this node
+					if currentLoad > 0 {
+						m.BroadcastState()
+					}
+				}
+			}
 		case <-ctx.Done():
 			return ctx.Err()
 		}

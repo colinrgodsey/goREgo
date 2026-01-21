@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/colinrgodsey/goREgo/pkg/config"
+	"github.com/hashicorp/memberlist"
 )
 
 // mockLoadProvider implements LoadProvider for testing.
@@ -393,5 +394,92 @@ func TestTwoNodeCluster(t *testing.T) {
 		t.Error("m2.SelectBestPeer() returned nil")
 	} else if peer.Name != "node-1" {
 		t.Errorf("m2.SelectBestPeer().Name = %v, want node-1", peer.Name)
+	}
+}
+
+func TestRunBroadcastOnLoadChange(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	lp := &mockLoadProvider{count: 0}
+
+	// Use a high port to avoid conflicts
+	m, err := NewManager(config.ClusterConfig{
+		Enabled:         true,
+		NodeID:          "node-broadcast-test",
+		BindPort:        17948,
+		DiscoveryMode:   "list",
+		BroadcastPeriod: 1 * time.Second, // Long period to rely on load trigger
+	}, "localhost:50053", 4, lp, logger)
+	if err != nil {
+		t.Fatalf("NewManager() error = %v", err)
+	}
+
+	m.broadcasts = &memberlist.TransmitLimitedQueue{
+		NumNodes: func() int { return 10 },
+		RetransmitMult: 1,
+	}
+
+	// Run loop in background
+	go func() {
+		m.Run(ctx)
+	}()
+
+	// Wait for Run to initialize lastLoad (which is 0)
+	time.Sleep(50 * time.Millisecond)
+
+	// Change load to non-zero (5)
+	lp.count = 5
+	// We expect a broadcast
+	// Drain it fully
+	found := false
+	for i := 0; i < 20; i++ {
+		b := m.GetBroadcasts(0, 1024)
+		if len(b) > 0 {
+			found = true
+		} else if found {
+			break // Drained
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if !found {
+		t.Error("expected broadcast after load change to 5, got none")
+	}
+
+	// Change load to same value (should not broadcast)
+	// Ensure no new broadcasts appear
+	time.Sleep(50 * time.Millisecond)
+	b := m.GetBroadcasts(0, 1024)
+	if len(b) > 0 {
+		t.Errorf("expected no broadcast for steady load, got %d", len(b))
+	}
+
+	// Change load to 0 (should not broadcast per current logic)
+	lp.count = 0
+	time.Sleep(50 * time.Millisecond)
+	b = m.GetBroadcasts(0, 1024)
+	if len(b) > 0 {
+		t.Errorf("expected no broadcast for load change to 0, got %d", len(b))
+	}
+
+	// Change load to 6 (should broadcast)
+	lp.count = 6
+	found = false
+	for i := 0; i < 20; i++ {
+		b := m.GetBroadcasts(0, 1024)
+		if len(b) > 0 {
+			found = true
+		} else if found {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if !found {
+		t.Error("expected broadcast after load change to 6, got none")
 	}
 }

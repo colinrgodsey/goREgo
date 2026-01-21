@@ -43,6 +43,7 @@ cluster:
   # node_id: "" # Unique node identifier (auto-generated from hostname if empty)
   bind_port: 7946 # Port for gossip protocol (memberlist)
   # advertise_addr: "" # Address to advertise to peers (auto-detect if empty)
+  broadcast_period: "500ms" # How often to broadcast state
 
   # Discovery mode: "list" for static peers, "dns" for DNS-based discovery
   discovery_mode: "list"
