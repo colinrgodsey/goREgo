@@ -7,16 +7,21 @@ import (
 )
 
 type Config struct {
-	ListenAddr          string `mapstructure:"listen_addr"`
-	LocalCacheDir       string `mapstructure:"local_cache_dir"`
-	LocalCacheMaxSizeGB int    `mapstructure:"local_cache_max_size_gb"`
-	ForceUpdateATime    bool   `mapstructure:"force_update_atime"`
-	LogLevel            string `mapstructure:"log_level"`
+	ListenAddr       string           `mapstructure:"listen_addr"`
+	LocalCache       LocalCacheConfig `mapstructure:"local_cache"`
+	ForceUpdateATime bool             `mapstructure:"force_update_atime"`
+	LogLevel         string           `mapstructure:"log_level"`
 
 	BackingCache BackingCacheConfig `mapstructure:"backing_cache"`
 	Telemetry    TelemetryConfig    `mapstructure:"telemetry"`
 	Execution    ExecutionConfig    `mapstructure:"execution"`
 	Cluster      ClusterConfig      `mapstructure:"cluster"`
+}
+
+type LocalCacheConfig struct {
+	Enabled   bool   `mapstructure:"enabled"`
+	Dir       string `mapstructure:"dir"`
+	MaxSizeGB int    `mapstructure:"max_size_gb"`
 }
 
 type ExecutionConfig struct {
@@ -63,8 +68,9 @@ func LoadConfig(configPath string) (*Config, error) {
 
 	// Defaults
 	v.SetDefault("listen_addr", ":50051")
-	v.SetDefault("local_cache_dir", "/tmp/gorego/cache")
-	v.SetDefault("local_cache_max_size_gb", 100)
+	v.SetDefault("local_cache.enabled", true)
+	v.SetDefault("local_cache.dir", "/tmp/gorego/cache")
+	v.SetDefault("local_cache.max_size_gb", 10)
 	v.SetDefault("cluster.enabled", false)
 	v.SetDefault("cluster.bind_port", 7946)
 	v.SetDefault("cluster.discovery_mode", "list")

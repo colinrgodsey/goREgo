@@ -34,3 +34,9 @@ type ActionCache interface {
 	GetActionResult(ctx context.Context, digest Digest) (*repb.ActionResult, error)
 	UpdateActionResult(ctx context.Context, digest Digest, result *repb.ActionResult) error
 }
+
+// Store combines BlobStore and ActionCache into a single interface.
+type Store interface {
+	BlobStore
+	ActionCache
+}

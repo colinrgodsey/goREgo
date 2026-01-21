@@ -1,0 +1,53 @@
+{{- $clusterEnabled := .Values.config.cluster.enabled -}}
+{{- if eq $clusterEnabled nil -}}
+{{- $clusterEnabled = gt (int .Values.replicaCount) 1 -}}
+{{- end -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "gorego.fullname" . }}
+  labels:
+    {{- include "gorego.labels" . | nindent 4 }}
+data:
+  config.yaml: |
+    listen_addr: {{ .Values.config.listen_addr | quote }}
+    local_cache:
+      enabled: {{ .Values.config.local_cache.enabled }}
+      dir: {{ .Values.config.local_cache.dir | quote }}
+      max_size_gb: {{ .Values.config.local_cache.max_size_gb }}
+    force_update_atime: {{ .Values.config.force_update_atime }}
+    log_level: {{ .Values.config.log_level | quote }}
+    backing_cache:
+      target: {{ .Values.config.backing_cache.target | quote }}
+      {{- if .Values.config.backing_cache.compression }}
+      compression: {{ .Values.config.backing_cache.compression | quote }}
+      {{- end }}
+      put_retry_count: {{ .Values.config.backing_cache.put_retry_count }}
+    telemetry:
+      metrics_addr: {{ .Values.config.telemetry.metrics_addr | quote }}
+      tracing_endpoint: {{ .Values.config.telemetry.tracing_endpoint | quote }}
+    execution:
+      enabled: {{ .Values.config.execution.enabled }}
+      concurrency: {{ .Values.config.execution.concurrency }}
+      build_root: {{ .Values.config.execution.build_root | quote }}
+      queue_size: {{ .Values.config.execution.queue_size }}
+      sandbox:
+        enabled: {{ .Values.config.execution.sandbox.enabled }}
+        binary_path: {{ .Values.config.execution.sandbox.binary_path | quote }}
+        network_isolation: {{ .Values.config.execution.sandbox.network_isolation }}
+        writable_paths: []
+        kill_delay: {{ .Values.config.execution.sandbox.kill_delay }}
+        debug: {{ .Values.config.execution.sandbox.debug }}
+    cluster:
+      enabled: {{ $clusterEnabled }}
+      bind_port: {{ .Values.config.cluster.bind_port }}
+      advertise_addr: {{ .Values.config.cluster.advertise_addr | quote }}
+      discovery_mode: {{ .Values.config.cluster.discovery_mode | quote }}
+      {{- if .Values.config.cluster.dns_service_name }}
+      dns_service_name: {{ .Values.config.cluster.dns_service_name | quote }}
+      {{- else if $clusterEnabled }}
+      dns_service_name: "{{ include "gorego.fullname" . }}-headless.{{ .Release.Namespace }}.svc.cluster.local"
+      {{- else }}
+      dns_service_name: ""
+      {{- end }}
+      join_peers: {{ .Values.config.cluster.join_peers | toJson }}

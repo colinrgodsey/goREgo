@@ -27,7 +27,7 @@ $ helm install gorego ./charts/gorego/
 ### *3\. go, REs, go differently\!* (The Power User)
 
 Total control.  
-Full customization of the deployment via Helm and custom runtime containers.
+Full customization of the deployment via Helm and custom deploy containers.
 
 ## **🏗 Architecture**
 

@@ -5,6 +5,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"time"
 
 	repb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
 	"github.com/colinrgodsey/goREgo/pkg/storage"
@@ -15,6 +16,8 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
+
+const putRetryDelay = 500 * time.Millisecond
 
 type ProxyStore struct {
 	local         *storage.LocalStore
@@ -99,6 +102,8 @@ func (p *ProxyStore) putFileImpl(ctx context.Context, digest storage.Digest, pat
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
+
+		time.Sleep(putRetryDelay)
 	}
 
 	p.logger.Error("remote put file failed after all retries",
@@ -259,7 +264,6 @@ func (p *ProxyStore) putImpl(ctx context.Context, digest storage.Digest, data io
 	return nil
 }
 
-// Implement ActionCache interface...
 func (p *ProxyStore) GetActionResult(ctx context.Context, digest storage.Digest) (*repb.ActionResult, error) {
 	ctx, span := p.tracer.Start(ctx, "proxy.GetActionResult", trace.WithAttributes(
 		attribute.String("digest.hash", digest.Hash),

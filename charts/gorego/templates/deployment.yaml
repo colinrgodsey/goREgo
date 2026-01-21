@@ -1,4 +1,4 @@
-{{- if .Values.config.local_cache.enabled }}
+{{- if not .Values.config.local_cache.enabled }}
 {{- $clusterEnabled := .Values.config.cluster.enabled -}}
 {{- if eq $clusterEnabled nil -}}
 {{- $clusterEnabled = gt (int .Values.replicaCount) 1 -}}
@@ -9,18 +9,13 @@
 {{- end -}}
 
 apiVersion: apps/v1
-kind: StatefulSet
+kind: Deployment
 metadata:
   name: {{ include "gorego.fullname" . }}
   labels:
     {{- include "gorego.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.replicaCount }}
-  {{- if $clusterEnabled }}
-  serviceName: {{ include "gorego.fullname" . }}-headless
-  {{- else }}
-  serviceName: {{ include "gorego.fullname" . }}
-  {{- end }}
   selector:
     matchLabels:
       {{- include "gorego.selectorLabels" . | nindent 6 }}
@@ -84,21 +79,8 @@ spec:
           volumeMounts:
             - name: config
               mountPath: /etc/gorego
-            - name: data
-              mountPath: /tmp
       volumes:
         - name: config
           configMap:
             name: {{ include "gorego.fullname" . }}
-  volumeClaimTemplates:
-  - metadata:
-      name: data
-    spec:
-      accessModes: [ "ReadWriteOnce" ]
-      {{- if .Values.storage.className }}
-      storageClassName: {{ .Values.storage.className }}
-      {{- end }}
-      resources:
-        requests:
-          storage: {{ .Values.storage.size }}
 {{- end }}

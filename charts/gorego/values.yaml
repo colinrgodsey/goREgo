@@ -16,9 +16,6 @@ imagePullSecrets: []
 nameOverride: ""
 fullnameOverride: ""
 
-statefulset:
-  enabled: true
-
 service:
   type: ClusterIP
   port: 9092
@@ -50,18 +47,23 @@ nice: 0
 
 config:
   listen_addr: ":50051"
-  local_cache_dir: "/tmp/cache"
-  local_cache_max_size_gb: 10
-  log_level: "info"
+  local_cache:
+    enabled: true
+    dir: "/tmp/gorego/cache"
+    max_size_gb: 10
+  force_update_atime: false
+  log_level: "warn"
   backing_cache:
     target: ""
+    compression: ""
+    put_retry_count: 3
   telemetry:
     metrics_addr: ":9090"
     tracing_endpoint: ""
   execution:
     enabled: true
     concurrency: 0
-    build_root: "/tmp/build"
+    build_root: "/tmp/gorego/builds"
     queue_size: 1000
     sandbox:
       enabled: false
@@ -78,6 +80,7 @@ config:
     enabled: null
     # Gossip port for memberlist (SWIM protocol)
     bind_port: 7946
+    advertise_addr: ""
     # Discovery mode: "dns" (recommended for k8s) or "list"
     discovery_mode: "dns"
     # DNS service name is auto-generated from the headless service.

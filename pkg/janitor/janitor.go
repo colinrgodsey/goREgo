@@ -61,6 +61,7 @@ func (fs *stdFileSystem) Remove(path string) error {
 type Janitor struct {
 	rootDir   string
 	maxSize   int64
+	minAge    time.Duration
 	checkFreq time.Duration
 	mu        sync.Mutex
 	fs        fileSystem
@@ -68,8 +69,9 @@ type Janitor struct {
 
 func NewJanitor(cfg *config.Config) *Janitor {
 	return &Janitor{
-		rootDir:   cfg.LocalCacheDir,
-		maxSize:   int64(cfg.LocalCacheMaxSizeGB) * 1024 * 1024 * 1024,
+		rootDir:   cfg.LocalCache.Dir,
+		maxSize:   int64(cfg.LocalCache.MaxSizeGB) * 1024 * 1024 * 1024,
+		minAge:    30 * time.Second,
 		checkFreq: 1 * time.Minute,
 		fs:        &stdFileSystem{},
 	}
@@ -126,10 +128,19 @@ func (j *Janitor) Cleanup() error {
 		return files[i].entry.AccessTime().Before(files[k].entry.AccessTime())
 	})
 
+	now := time.Now()
 	for _, f := range files {
 		if totalSize <= j.maxSize {
 			break
 		}
+
+		// Safeguard: Don't delete files accessed within the last minAge (default 30s)
+		// This prevents race conditions where a file is deleted right after creation/access
+		// during execution.
+		if now.Sub(f.entry.AccessTime()) < j.minAge {
+			continue
+		}
+
 		if err := j.fs.Remove(f.path); err != nil {
 			continue
 		}
