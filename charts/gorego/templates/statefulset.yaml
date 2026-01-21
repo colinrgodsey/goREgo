@@ -28,6 +28,10 @@ spec:
     metadata:
       labels:
         {{- include "gorego.selectorLabels" . | nindent 8 }}
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: {{ last (splitList ":" .Values.config.telemetry.metrics_addr) | quote }}
+        prometheus.io/path: "/metrics"
     spec:
       {{- with .Values.nodeSelector }}
       nodeSelector:
@@ -58,6 +62,9 @@ spec:
           ports:
             - name: grpc
               containerPort: 50051
+              protocol: TCP
+            - name: metrics
+              containerPort: {{ last (splitList ":" .Values.config.telemetry.metrics_addr) }}
               protocol: TCP
             {{- if $clusterEnabled }}
             - name: gossip
