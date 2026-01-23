@@ -28,6 +28,7 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/durationpb"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 const (
@@ -105,7 +106,7 @@ func (w *WorkerPool) runWorker(ctx context.Context, workerID int) error {
 		}
 
 		logger.Info("processing task", "operation_id", task.OperationID)
-		
+
 		// Use a detached context for execution so that shutdown (canceling ctx)
 		// doesn't abort the running task. The task will still respect its own
 		// timeouts (enforced in execute()).
@@ -352,15 +353,17 @@ func (w *WorkerPool) stageDirectory(ctx context.Context, targetDir string, dirDi
 }
 
 func (w *WorkerPool) stageFile(ctx context.Context, targetPath string, d digest.Digest, executable bool) error {
-	if lbs, ok := w.blobStore.(storage.LocalBlobStore); ok {
-		// Ensure it's local. Get will fetch it if using ProxyStore.
-		// TOOD: will this make sure the file is actually hydrated correctly?
-		rc, err := w.blobStore.Get(ctx, d)
-		if err != nil {
-			return err
-		}
-		rc.Close()
+	// Get the blob once. The handling differs based on whether we have LocalBlobStore.
+	rc, err := w.blobStore.Get(ctx, d)
+	if err != nil {
+		return err
+	}
+	defer rc.Close()
 
+	if lbs, ok := w.blobStore.(storage.LocalBlobStore); ok {
+		// For LocalBlobStore, we can hardlink from the file on disk.
+		// The Get above ensures the file is populated (e.g., via ProxyStore),
+		// then we get its path and hardlink it.
 		path, err := lbs.BlobPath(d)
 		if err != nil {
 			return err
@@ -390,13 +393,7 @@ func (w *WorkerPool) stageFile(ctx context.Context, targetPath string, d digest.
 		w.logger.Warn("failed to hardlink, falling back to copy", "src", path, "dst", targetPath, "error", err)
 	}
 
-	// TODO: deduplicate with above?
-	rc, err := w.blobStore.Get(ctx, d)
-	if err != nil {
-		return err
-	}
-	defer rc.Close()
-
+	// Fallback: write directly to disk
 	perm := os.FileMode(0644)
 	if executable {
 		perm = os.FileMode(0755)
@@ -696,7 +693,7 @@ func (w *WorkerPool) uploadOutputs(ctx context.Context, workDir string, command 
 	result := &repb.ActionResult{
 		ExitCode: int32(execResult.exitCode),
 		ExecutionMetadata: &repb.ExecutedActionMetadata{
-			ExecutionCompletedTimestamp: nil, // TODO: timestamps
+			ExecutionCompletedTimestamp: timestamppb.Now(),
 		},
 	}
 
