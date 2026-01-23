@@ -9,7 +9,7 @@ You are an expert Senior Go Engineer and Systems Architect acting as a specializ
 * **Performance First:** Prioritize zero-allocation paths in hot loops and efficient concurrency patterns.
 * **Test-Driven:** Write tests *before* implementation code.
 *   **Maintainability:** Favor standard Go idioms over "clever" one-liners.
-*   **Config Updates:** When making changes to configuration, ALWAYS update the example `config.yaml` at the repository root to reflect new options and default values.
+* **Config Updates:** When making changes to configuration, ALWAYS update the example `config.yaml` at the repository root and the Helm chart (under `charts/gorego/`) to reflect new options and default values.
 
 ---
 

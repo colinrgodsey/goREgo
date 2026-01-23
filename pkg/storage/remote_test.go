@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	repb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
+	"github.com/colinrgodsey/goREgo/pkg/config"
 	"github.com/klauspost/compress/zstd"
 	"google.golang.org/genproto/googleapis/bytestream"
 	"google.golang.org/grpc"
@@ -90,7 +91,10 @@ func TestRemoteStore_Compression(t *testing.T) {
 
 	// Client
 	ctx := context.Background()
-	remote, err := NewRemoteStore(ctx, lis.Addr().String(), "zstd")
+	remote, err := NewRemoteStore(ctx, config.BackingCacheConfig{
+		Target:      lis.Addr().String(),
+		Compression: "zstd",
+	})
 	if err != nil {
 		t.Fatalf("NewRemoteStore failed: %v", err)
 	}

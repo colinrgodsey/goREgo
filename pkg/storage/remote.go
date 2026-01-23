@@ -2,15 +2,21 @@ package storage
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 
 	"github.com/bazelbuild/remote-apis-sdks/go/pkg/client"
 	repb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
+	"github.com/colinrgodsey/goREgo/pkg/config"
 	"github.com/google/uuid"
 	"github.com/klauspost/compress/zstd"
 	"google.golang.org/genproto/googleapis/bytestream"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 )
 
 type RemoteStore struct {
@@ -18,19 +24,58 @@ type RemoteStore struct {
 	compression string
 }
 
-func NewRemoteStore(ctx context.Context, target string, compression string) (*RemoteStore, error) {
-	// TODO: Support TLS/Auth configuration
-	dialAddr := strings.TrimPrefix(target, "grpc://")
-	c, err := client.NewClient(ctx, "", client.DialParams{
-		Service:    dialAddr,
-		NoSecurity: true,
-	})
+func NewRemoteStore(ctx context.Context, cfg config.BackingCacheConfig) (*RemoteStore, error) {
+	dialAddr := strings.TrimPrefix(cfg.Target, "grpc://")
+	dialAddr = strings.TrimPrefix(dialAddr, "grpcs://")
+
+	dialParams := client.DialParams{
+		Service: dialAddr,
+	}
+
+	if cfg.TLS.Enabled {
+		tlsConfig := &tls.Config{
+			InsecureSkipVerify: false, // Default to secure
+		}
+
+		// Load client cert if provided
+		if cfg.TLS.CertFile != "" && cfg.TLS.KeyFile != "" {
+			cert, err := tls.LoadX509KeyPair(cfg.TLS.CertFile, cfg.TLS.KeyFile)
+			if err != nil {
+				return nil, fmt.Errorf("failed to load client cert/key: %w", err)
+			}
+			tlsConfig.Certificates = []tls.Certificate{cert}
+		}
+
+		// Load CA if provided
+		if cfg.TLS.CAFile != "" {
+			caCert, err := os.ReadFile(cfg.TLS.CAFile)
+			if err != nil {
+				return nil, fmt.Errorf("failed to read CA file: %w", err)
+			}
+			caCertPool := x509.NewCertPool()
+			if !caCertPool.AppendCertsFromPEM(caCert) {
+				return nil, fmt.Errorf("failed to append CA cert")
+			}
+			tlsConfig.RootCAs = caCertPool
+		}
+
+		creds := credentials.NewTLS(tlsConfig)
+		dialParams.DialOpts = append(dialParams.DialOpts, grpc.WithTransportCredentials(creds))
+	} else {
+		dialParams.NoSecurity = true
+	}
+
+	// Additional dial options (e.g. for larger message sizes if needed)
+	dialParams.DialOpts = append(dialParams.DialOpts, grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(100*1024*1024))) // 100MB
+
+	c, err := client.NewClient(ctx, "", dialParams)
+
 	if err != nil {
 		return nil, err
 	}
 	return &RemoteStore{
 		c:           c,
-		compression: compression,
+		compression: cfg.Compression,
 	}, nil
 }
 

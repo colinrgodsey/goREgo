@@ -2,8 +2,11 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"flag"
+	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
@@ -30,6 +33,7 @@ import (
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/genproto/googleapis/bytestream"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/health"
 	"google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/reflection"
@@ -48,6 +52,52 @@ func parseLogLevel(level string) slog.Level {
 	default:
 		return slog.LevelWarn
 	}
+}
+
+func loadServerTLS(cfg config.TLSConfig) (credentials.TransportCredentials, error) {
+	if !cfg.Enabled {
+		return nil, nil
+	}
+
+	certificate, err := tls.LoadX509KeyPair(cfg.CertFile, cfg.KeyFile)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load server cert/key: %w", err)
+	}
+
+	tlsConfig := &tls.Config{
+		Certificates: []tls.Certificate{certificate},
+		ClientAuth:   tls.NoClientCert,
+	}
+
+	if cfg.ClientAuth != "none" && cfg.ClientAuth != "" {
+		if cfg.CAFile == "" {
+			return nil, fmt.Errorf("client_auth enabled but no ca_file provided")
+		}
+		caCert, err := os.ReadFile(cfg.CAFile)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read CA file: %w", err)
+		}
+		caCertPool := x509.NewCertPool()
+		if !caCertPool.AppendCertsFromPEM(caCert) {
+			return nil, fmt.Errorf("failed to append CA cert")
+		}
+		tlsConfig.ClientCAs = caCertPool
+
+		switch cfg.ClientAuth {
+		case "request":
+			tlsConfig.ClientAuth = tls.RequestClientCert
+		case "require":
+			tlsConfig.ClientAuth = tls.RequireAnyClientCert
+		case "verify_if_given":
+			tlsConfig.ClientAuth = tls.VerifyClientCertIfGiven
+		case "require_and_verify":
+			tlsConfig.ClientAuth = tls.RequireAndVerifyClientCert
+		default:
+			return nil, fmt.Errorf("unknown client_auth mode: %s", cfg.ClientAuth)
+		}
+	}
+
+	return credentials.NewTLS(tlsConfig), nil
 }
 
 func main() {
@@ -151,7 +201,7 @@ func main() {
 		} else {
 			slog.Info("Connecting to backing cache", "target", cfg.BackingCache.Target, "compression", cfg.BackingCache.Compression)
 			var err error
-			remoteStore, err = storage.NewRemoteStore(ctx, cfg.BackingCache.Target, cfg.BackingCache.Compression)
+			remoteStore, err = storage.NewRemoteStore(ctx, cfg.BackingCache)
 			if err != nil {
 				slog.Error("failed to connect to backing cache", "error", err)
 				os.Exit(1)
@@ -169,7 +219,7 @@ func main() {
 
 		slog.Info("Local cache disabled. Running in stateless mode.", "backing_cache", cfg.BackingCache.Target)
 		var err error
-		store, err = storage.NewRemoteStore(ctx, cfg.BackingCache.Target, cfg.BackingCache.Compression)
+		store, err = storage.NewRemoteStore(ctx, cfg.BackingCache)
 		if err != nil {
 			slog.Error("failed to connect to backing cache", "error", err)
 			os.Exit(1)
@@ -256,9 +306,21 @@ func main() {
 		os.Exit(1)
 	}
 
-	grpcServer := grpc.NewServer(
+	serverOpts := []grpc.ServerOption{
 		telemetry.NewServerHandler(),
-	)
+	}
+
+	tlsCreds, err := loadServerTLS(cfg.TLS)
+	if err != nil {
+		slog.Error("failed to load TLS config", "error", err)
+		os.Exit(1)
+	}
+	if tlsCreds != nil {
+		slog.Info("TLS enabled")
+		serverOpts = append(serverOpts, grpc.Creds(tlsCreds))
+	}
+
+	grpcServer := grpc.NewServer(serverOpts...)
 
 	// Register CAS
 	casServer := server.NewContentAddressableStorageServer(store)

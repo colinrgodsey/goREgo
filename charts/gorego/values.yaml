@@ -37,6 +37,17 @@ storage:
   className: ""
   size: 10Gi
 
+# Additional volumes and mounts for certificates or other needs
+extraVolumes: []
+# - name: server-certs
+#   secret:
+#     secretName: my-server-certs
+
+extraVolumeMounts: []
+# - name: server-certs
+#   mountPath: /etc/gorego/certs
+#   readOnly: true
+
 # Node selection constraints
 nodeSelector: {}
 tolerations: []
@@ -47,6 +58,15 @@ nice: 0
 
 config:
   listen_addr: ":50051"
+  
+  # Server TLS configuration
+  tls:
+    enabled: false
+    cert_file: "" # Path to server certificate (PEM)
+    key_file: ""  # Path to server private key (PEM)
+    client_auth: "none" # none, request, require, verify_if_given, require_and_verify
+    ca_file: ""   # Path to CA certificate (PEM) for verifying client certs
+
   local_cache:
     enabled: true
     dir: "/tmp/gorego/cache"
@@ -57,6 +77,13 @@ config:
     target: ""
     compression: ""
     put_retry_count: 3
+    # Client TLS configuration for backing cache
+    tls:
+      enabled: false
+      cert_file: "" # Path to client certificate (PEM)
+      key_file: ""  # Path to client private key (PEM)
+      ca_file: ""   # Path to CA certificate (PEM) for verifying the server
+
   telemetry:
     metrics_addr: ":9090"
     tracing_endpoint: ""

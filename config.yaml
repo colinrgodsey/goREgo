@@ -1,6 +1,14 @@
 # Main server listening address
 listen_addr: ":50051"
 
+# TLS configuration for the server
+tls:
+  enabled: false
+  cert_file: "" # Path to server certificate (PEM)
+  key_file: ""  # Path to server private key (PEM)
+  client_auth: "none" # Client authentication mode: none, request, require, verify_if_given, require_and_verify
+  ca_file: ""   # Path to CA certificate (PEM) for verifying client certs
+
 # Local cache configuration
 local_cache:
   enabled: true # Whether the local cache is enabled. Required if no backing cache is configured.
@@ -17,6 +25,13 @@ backing_cache:
   target: "" # Address of the backing cache server (e.g., "grpcs://some-remote.com:443")
   # compression: "zstd" # Compression algorithm (e.g., "zstd" or empty)
   put_retry_count: 3 # Number of retries for remote put operations (default: 3)
+  
+  # TLS configuration for connecting to the backing cache
+  tls:
+    enabled: false
+    cert_file: "" # Path to client certificate (PEM)
+    key_file: ""  # Path to client private key (PEM)
+    ca_file: ""   # Path to CA certificate (PEM) for verifying the server
 
 # Telemetry configuration (metrics and tracing)
 telemetry:

@@ -11,6 +11,12 @@ metadata:
 data:
   config.yaml: |
     listen_addr: {{ .Values.config.listen_addr | quote }}
+    tls:
+      enabled: {{ .Values.config.tls.enabled }}
+      cert_file: {{ .Values.config.tls.cert_file | quote }}
+      key_file: {{ .Values.config.tls.key_file | quote }}
+      client_auth: {{ .Values.config.tls.client_auth | quote }}
+      ca_file: {{ .Values.config.tls.ca_file | quote }}
     local_cache:
       enabled: {{ .Values.config.local_cache.enabled }}
       dir: {{ .Values.config.local_cache.dir | quote }}
@@ -23,6 +29,11 @@ data:
       compression: {{ .Values.config.backing_cache.compression | quote }}
       {{- end }}
       put_retry_count: {{ .Values.config.backing_cache.put_retry_count }}
+      tls:
+        enabled: {{ .Values.config.backing_cache.tls.enabled }}
+        cert_file: {{ .Values.config.backing_cache.tls.cert_file | quote }}
+        key_file: {{ .Values.config.backing_cache.tls.key_file | quote }}
+        ca_file: {{ .Values.config.backing_cache.tls.ca_file | quote }}
     telemetry:
       metrics_addr: {{ .Values.config.telemetry.metrics_addr | quote }}
       tracing_endpoint: {{ .Values.config.telemetry.tracing_endpoint | quote }}

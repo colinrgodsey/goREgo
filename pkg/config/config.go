@@ -9,6 +9,7 @@ import (
 
 type Config struct {
 	ListenAddr       string           `mapstructure:"listen_addr"`
+	TLS              TLSConfig        `mapstructure:"tls"`
 	LocalCache       LocalCacheConfig `mapstructure:"local_cache"`
 	ForceUpdateATime bool             `mapstructure:"force_update_atime"`
 	LogLevel         string           `mapstructure:"log_level"`
@@ -17,6 +18,14 @@ type Config struct {
 	Telemetry    TelemetryConfig    `mapstructure:"telemetry"`
 	Execution    ExecutionConfig    `mapstructure:"execution"`
 	Cluster      ClusterConfig      `mapstructure:"cluster"`
+}
+
+type TLSConfig struct {
+	Enabled      bool   `mapstructure:"enabled"`
+	CertFile     string `mapstructure:"cert_file"`
+	KeyFile      string `mapstructure:"key_file"`
+	CAFile       string `mapstructure:"ca_file"`
+	ClientAuth   string `mapstructure:"client_auth"` // "none", "request", "require", "verify_if_given", "require_and_verify"
 }
 
 type LocalCacheConfig struct {
@@ -43,9 +52,10 @@ type SandboxConfig struct {
 }
 
 type BackingCacheConfig struct {
-	Target        string `mapstructure:"target"`
-	Compression   string `mapstructure:"compression"`     // "zstd" or empty
-	PutRetryCount int    `mapstructure:"put_retry_count"` // Number of retries for remote put operations
+	Target        string    `mapstructure:"target"`
+	Compression   string    `mapstructure:"compression"`     // "zstd" or empty
+	PutRetryCount int       `mapstructure:"put_retry_count"` // Number of retries for remote put operations
+	TLS           TLSConfig `mapstructure:"tls"`
 }
 
 type TelemetryConfig struct {

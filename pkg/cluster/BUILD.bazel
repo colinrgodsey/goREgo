@@ -13,6 +13,7 @@ go_library(
         "@com_github_google_uuid//:uuid",
         "@com_github_hashicorp_memberlist//:memberlist",
         "@org_golang_google_protobuf//proto",
+        "@org_golang_google_protobuf//types/known/timestamppb",
     ],
 )
 
@@ -20,7 +21,10 @@ go_test(
     name = "cluster_test",
     srcs = ["cluster_test.go"],
     embed = [":cluster"],
-    deps = ["//pkg/config"],
+    deps = [
+        "//pkg/config",
+        "@com_github_hashicorp_memberlist//:memberlist",
+    ],
 )
 
 proto_library(
