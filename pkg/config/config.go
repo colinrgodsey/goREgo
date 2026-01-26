@@ -87,6 +87,9 @@ func LoadConfig(configPath string) (*Config, error) {
 	v.SetDefault("cluster.bind_port", 7946)
 	v.SetDefault("cluster.discovery_mode", "list")
 	v.SetDefault("cluster.broadcast_period", "500ms")
+	v.SetDefault("cluster.node_id", "")
+	v.SetDefault("cluster.advertise_addr", "")
+	v.SetDefault("cluster.dns_service_name", "")
 	v.SetDefault("force_update_atime", false)
 	v.SetDefault("log_level", "warn")
 	v.SetDefault("telemetry.metrics_addr", ":9090")
@@ -101,6 +104,11 @@ func LoadConfig(configPath string) (*Config, error) {
 	v.SetDefault("execution.sandbox.kill_delay", 5)
 	v.SetDefault("execution.sandbox.debug", false)
 	v.SetDefault("backing_cache.put_retry_count", 3)
+	v.SetDefault("backing_cache.tls.enabled", false)
+	v.SetDefault("backing_cache.tls.cert_file", "")
+	v.SetDefault("backing_cache.tls.key_file", "")
+	v.SetDefault("backing_cache.tls.ca_file", "")
+	v.SetDefault("backing_cache.tls.client_auth", "none")
 
 	// Env overrides
 	v.SetEnvPrefix("GOREGO")

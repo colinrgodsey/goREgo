@@ -83,6 +83,7 @@ config:
       cert_file: "" # Path to client certificate (PEM)
       key_file: ""  # Path to client private key (PEM)
       ca_file: ""   # Path to CA certificate (PEM) for verifying the server
+      client_auth: "none" # none, request, require, verify_if_given, require_and_verify
 
   telemetry:
     metrics_addr: ":9090"
@@ -105,8 +106,11 @@ config:
     # Explicitly enable/disable clustering.
     # If not set, clustering is auto-enabled when replicaCount > 1.
     enabled: null
+    # Unique node identifier (auto-generated from hostname if empty)
+    node_id: ""
     # Gossip port for memberlist (SWIM protocol)
     bind_port: 7946
+    # Address to advertise to peers (auto-detect if empty)
     advertise_addr: ""
     # Discovery mode: "dns" (recommended for k8s) or "list"
     discovery_mode: "dns"

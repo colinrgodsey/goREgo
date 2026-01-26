@@ -32,6 +32,7 @@ backing_cache:
     cert_file: "" # Path to client certificate (PEM)
     key_file: ""  # Path to client private key (PEM)
     ca_file: ""   # Path to CA certificate (PEM) for verifying the server
+    client_auth: "none" # Client authentication mode: none, request, require, verify_if_given, require_and_verify
 
 # Telemetry configuration (metrics and tracing)
 telemetry:
@@ -70,3 +71,9 @@ cluster:
   # DNS service name (used when discovery_mode == "dns")
   # Useful for Kubernetes Headless Services
   # dns_service_name: "gorego-headless.default.svc.cluster.local"
+
+  # Unique node identifier (auto-generated from hostname if empty)
+  # node_id: ""
+
+  # Address to advertise to peers (auto-detect if empty)
+  # advertise_addr: ""
