@@ -286,11 +286,7 @@ func (s *Scheduler) Subscribe(name string) (<-chan *OperationStatus, func()) {
 
 	// Send current state immediately
 	if op, ok := s.operations[name]; ok {
-		select {
-		case ch <- op:
-		default:
-			// Subscriber not ready, skip
-		}
+		ch <- op
 	}
 	s.mu.Unlock()
 
@@ -389,9 +385,7 @@ func (s *Scheduler) GetPendingTaskCount() int {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	// Since taskQueue is a channel, we can't use len() on it directly
-	// Instead, we need to count how many tasks are in the channel
-	// We get the length of the channel by using len() with no blocking
+	// Get the number of tasks currently in the queue channel
 	queueLength := len(s.taskQueue)
 
 	// queued tasks in channel + currently executing
