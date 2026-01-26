@@ -289,6 +289,7 @@ func (s *Scheduler) Subscribe(name string) (<-chan *OperationStatus, func()) {
 		select {
 		case ch <- op:
 		default:
+			// Subscriber not ready, skip
 		}
 	}
 	s.mu.Unlock()
@@ -310,6 +311,7 @@ func (s *Scheduler) Subscribe(name string) (<-chan *OperationStatus, func()) {
 	return ch, unsubscribe
 }
 
+// notifySubscribersLocked notifies all subscribers of an operation's state change.
 func (s *Scheduler) notifySubscribersLocked(name string, op *OperationStatus) {
 	for _, ch := range s.subscribers[name] {
 		select {
@@ -320,6 +322,7 @@ func (s *Scheduler) notifySubscribersLocked(name string, op *OperationStatus) {
 	}
 }
 
+// toProto converts an OperationStatus to a longrunning.Operation.
 func (s *Scheduler) toProto(op *OperationStatus) (*longrunning.Operation, error) {
 	metadataAny, err := anypb.New(op.Metadata)
 	if err != nil {
@@ -386,8 +389,13 @@ func (s *Scheduler) GetPendingTaskCount() int {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
+	// Since taskQueue is a channel, we can't use len() on it directly
+	// Instead, we need to count how many tasks are in the channel
+	// We get the length of the channel by using len() with no blocking
+	queueLength := len(s.taskQueue)
+
 	// queued tasks in channel + currently executing
-	return len(s.taskQueue) + s.executingCount
+	return queueLength + s.executingCount
 }
 
 // NodeID returns the node ID used for operation ID prefixing.

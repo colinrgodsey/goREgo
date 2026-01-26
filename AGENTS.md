@@ -29,7 +29,7 @@ This project uses **Bazel** for building and testing, and **Gazelle** for genera
 
 2.  **Command Reference:**
     * **Build:** `bazel build //...`
-    * **Test:** `bazel test //...` (Use `--test_output=errors` to see failures).
+    * **Test:** `bazel test //...` (Use `--test_output=errors` to see failures). Do not use `go test`, it will not work! You must use bazel to run the tests!
     * **Run Binary:** `bazel run //path/to/target:binary_name`
 
 3.  **Bazel Best Practices:**

@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	repb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
@@ -17,6 +18,7 @@ type LocalStore struct {
 	rootDir          string
 	forceUpdateATime bool
 	logger           *slog.Logger
+	mu               sync.RWMutex
 }
 
 func NewLocalStore(rootDir string, forceUpdateATime bool) (*LocalStore, error) {
@@ -45,6 +47,9 @@ func (s *LocalStore) BlobPath(digest Digest) (string, error) {
 }
 
 func (s *LocalStore) Has(ctx context.Context, digest Digest) (bool, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
 	path, _ := s.BlobPath(digest)
 	_, err := os.Stat(path)
 	if os.IsNotExist(err) {
@@ -63,6 +68,9 @@ func (s *LocalStore) Has(ctx context.Context, digest Digest) (bool, error) {
 }
 
 func (s *LocalStore) Get(ctx context.Context, digest Digest) (io.ReadCloser, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
 	path, _ := s.BlobPath(digest)
 	f, err := os.Open(path)
 	if err != nil {
@@ -120,6 +128,9 @@ func (s *LocalStore) UpdateActionResult(ctx context.Context, digest Digest, resu
 }
 
 func (s *LocalStore) Put(ctx context.Context, digest Digest, data io.Reader) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	path, _ := s.BlobPath(digest)
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		s.logger.Error("failed to create directory", "path", filepath.Dir(path), "error", err)

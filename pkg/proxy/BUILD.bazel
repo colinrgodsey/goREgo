@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "proxy",
@@ -14,5 +14,15 @@ go_library(
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//status",
         "@org_golang_x_sync//singleflight",
+    ],
+)
+
+go_test(
+    name = "proxy_test",
+    srcs = ["proxy_test.go"],
+    embed = [":proxy"],
+    deps = [
+        "//pkg/storage",
+        "@com_github_bazelbuild_remote_apis//build/bazel/remote/execution/v2:remote_execution_go_proto",
     ],
 )

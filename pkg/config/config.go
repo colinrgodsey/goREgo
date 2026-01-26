@@ -21,11 +21,11 @@ type Config struct {
 }
 
 type TLSConfig struct {
-	Enabled      bool   `mapstructure:"enabled"`
-	CertFile     string `mapstructure:"cert_file"`
-	KeyFile      string `mapstructure:"key_file"`
-	CAFile       string `mapstructure:"ca_file"`
-	ClientAuth   string `mapstructure:"client_auth"` // "none", "request", "require", "verify_if_given", "require_and_verify"
+	Enabled    bool   `mapstructure:"enabled"`
+	CertFile   string `mapstructure:"cert_file"`
+	KeyFile    string `mapstructure:"key_file"`
+	CAFile     string `mapstructure:"ca_file"`
+	ClientAuth string `mapstructure:"client_auth"` // "none", "request", "require", "verify_if_given", "require_and_verify"
 }
 
 type LocalCacheConfig struct {
@@ -65,13 +65,13 @@ type TelemetryConfig struct {
 
 // ClusterConfig holds configuration for the distributed cluster mesh.
 type ClusterConfig struct {
-	Enabled        bool     `mapstructure:"enabled"`
-	NodeID         string   `mapstructure:"node_id"`          // Unique node identifier (auto-generated if empty)
-	BindPort       int      `mapstructure:"bind_port"`        // Gossip port for memberlist (default: 7946)
-	AdvertiseAddr  string   `mapstructure:"advertise_addr"`   // Address to advertise to peers (auto-detect if empty)
-	DiscoveryMode  string   `mapstructure:"discovery_mode"`   // "list" or "dns"
-	JoinPeers      []string      `mapstructure:"join_peers"`       // Static peer addresses (used when discovery_mode == "list")
-	DNSServiceName string        `mapstructure:"dns_service_name"` // DNS hostname to resolve (used when discovery_mode == "dns")
+	Enabled         bool          `mapstructure:"enabled"`
+	NodeID          string        `mapstructure:"node_id"`          // Unique node identifier (auto-generated if empty)
+	BindPort        int           `mapstructure:"bind_port"`        // Gossip port for memberlist (default: 7946)
+	AdvertiseAddr   string        `mapstructure:"advertise_addr"`   // Address to advertise to peers (auto-detect if empty)
+	DiscoveryMode   string        `mapstructure:"discovery_mode"`   // "list" or "dns"
+	JoinPeers       []string      `mapstructure:"join_peers"`       // Static peer addresses (used when discovery_mode == "list")
+	DNSServiceName  string        `mapstructure:"dns_service_name"` // DNS hostname to resolve (used when discovery_mode == "dns")
 	BroadcastPeriod time.Duration `mapstructure:"broadcast_period"` // How often to broadcast state
 }
 

@@ -421,7 +421,7 @@ func TestRunBroadcastOnLoadChange(t *testing.T) {
 	}
 
 	m.broadcasts = &memberlist.TransmitLimitedQueue{
-		NumNodes: func() int { return 10 },
+		NumNodes:       func() int { return 10 },
 		RetransmitMult: 1,
 	}
 
