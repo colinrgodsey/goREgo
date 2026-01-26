@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
-	"sync"
 	"time"
 
 	repb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
@@ -18,7 +17,6 @@ type LocalStore struct {
 	rootDir          string
 	forceUpdateATime bool
 	logger           *slog.Logger
-	mu               sync.RWMutex
 }
 
 func NewLocalStore(rootDir string, forceUpdateATime bool) (*LocalStore, error) {
@@ -47,9 +45,6 @@ func (s *LocalStore) BlobPath(digest Digest) (string, error) {
 }
 
 func (s *LocalStore) Has(ctx context.Context, digest Digest) (bool, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
 	path, _ := s.BlobPath(digest)
 	_, err := os.Stat(path)
 	if os.IsNotExist(err) {
@@ -68,9 +63,6 @@ func (s *LocalStore) Has(ctx context.Context, digest Digest) (bool, error) {
 }
 
 func (s *LocalStore) Get(ctx context.Context, digest Digest) (io.ReadCloser, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
 	path, _ := s.BlobPath(digest)
 	f, err := os.Open(path)
 	if err != nil {
@@ -115,12 +107,27 @@ func (s *LocalStore) UpdateActionResult(ctx context.Context, digest Digest, resu
 	}
 
 	path := s.getActionPath(digest)
-	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0755); err != nil {
 		return err
 	}
 
-	tmpPath := path + ".tmp"
-	if err := os.WriteFile(tmpPath, data, 0644); err != nil {
+	f, err := os.CreateTemp(dir, "ac-tmp-*")
+	if err != nil {
+		return err
+	}
+	tmpPath := f.Name()
+
+	defer func() {
+		f.Close()
+		os.Remove(tmpPath) // Cleanup if rename didn't happen
+	}()
+
+	if _, err := f.Write(data); err != nil {
+		return err
+	}
+
+	if err := f.Close(); err != nil {
 		return err
 	}
 
@@ -128,22 +135,20 @@ func (s *LocalStore) UpdateActionResult(ctx context.Context, digest Digest, resu
 }
 
 func (s *LocalStore) Put(ctx context.Context, digest Digest, data io.Reader) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	path, _ := s.BlobPath(digest)
-	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
-		s.logger.Error("failed to create directory", "path", filepath.Dir(path), "error", err)
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		s.logger.Error("failed to create directory", "path", dir, "error", err)
 		return fmt.Errorf("failed to create directory: %w", err)
 	}
 
-	// Write to temp file first for atomicity
-	tmpPath := path + ".tmp"
-	f, err := os.Create(tmpPath)
+	// Use CreateTemp to avoid collisions and the truncation bug
+	f, err := os.CreateTemp(dir, "cas-tmp-*")
 	if err != nil {
-		s.logger.Error("failed to create temp file", "path", tmpPath, "error", err)
+		s.logger.Error("failed to create temp file", "dir", dir, "error", err)
 		return fmt.Errorf("failed to create temp file: %w", err)
 	}
+	tmpPath := f.Name()
 
 	defer func() {
 		f.Close()
@@ -190,15 +195,16 @@ func (s *LocalStore) PutFile(ctx context.Context, digest Digest, sourcePath stri
 		return nil
 	}
 
-	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0755); err != nil {
 		return fmt.Errorf("failed to create directory: %w", err)
 	}
 
-	tmpPath := path + ".tmp"
+	// Create a unique temporary filename manually since we need to use it for hardlinking
+	// and Os.CreateTemp creates the file which conflicts with os.Link.
+	tmpPath := filepath.Join(dir, fmt.Sprintf("cas-tmp-putfile-%d-%s", time.Now().UnixNano(), digest.Hash))
+
 	// Ensure the temporary file is removed on error before it's renamed.
-	// If rename succeeds, this defer will remove the new file if an error occurs *after* rename.
-	// This is a bit tricky, but the typical pattern is to defer cleanup of tmpPath.
-	// If the rename happens, tmpPath no longer exists, so os.Remove(tmpPath) does nothing.
 	defer func() {
 		// Only remove if it still exists (i.e., rename didn't happen, or an error occurred post-rename)
 		if _, statErr := os.Stat(tmpPath); statErr == nil {
