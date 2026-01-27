@@ -201,7 +201,7 @@ func main() {
 		} else {
 			slog.Info("Connecting to backing cache", "target", cfg.BackingCache.Target, "compression", cfg.BackingCache.Compression)
 			var err error
-			remoteStore, err = storage.NewRemoteStore(ctx, cfg.BackingCache)
+			remoteStore, err = storage.NewRemoteStore(context.Background(), cfg.BackingCache)
 			if err != nil {
 				slog.Error("failed to connect to backing cache", "error", err)
 				os.Exit(1)
@@ -219,7 +219,7 @@ func main() {
 
 		slog.Info("Local cache disabled. Running in stateless mode.", "backing_cache", cfg.BackingCache.Target)
 		var err error
-		store, err = storage.NewRemoteStore(ctx, cfg.BackingCache)
+		store, err = storage.NewRemoteStore(context.Background(), cfg.BackingCache)
 		if err != nil {
 			slog.Error("failed to connect to backing cache", "error", err)
 			os.Exit(1)

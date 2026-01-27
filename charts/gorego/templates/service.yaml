@@ -4,6 +4,10 @@ metadata:
   name: {{ include "gorego.fullname" . }}
   labels:
     {{- include "gorego.labels" . | nindent 4 }}
+  {{- with .Values.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
 spec:
   type: {{ .Values.service.type }}
   ports:
@@ -11,5 +15,8 @@ spec:
       targetPort: grpc
       protocol: TCP
       name: grpc
+      {{- if and (or (eq .Values.service.type "NodePort") (eq .Values.service.type "LoadBalancer")) .Values.service.nodePort }}
+      nodePort: {{ .Values.service.nodePort }}
+      {{- end }}
   selector:
     {{- include "gorego.selectorLabels" . | nindent 4 }}

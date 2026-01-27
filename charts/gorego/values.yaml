@@ -19,6 +19,8 @@ fullnameOverride: ""
 service:
   type: ClusterIP
   port: 9092
+  # nodePort: 30000
+  annotations: {}
 
 probes:
   liveness:

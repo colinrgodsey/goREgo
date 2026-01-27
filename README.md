@@ -9,7 +9,7 @@
 ### *1\. go, RE, go\!*
 
 Simple, single-node execution.  
-Perfect for local testing or simple setups. Run it directly via bazel run or deploy using the default Helm single-node configuration. No external dependencies required.
+Perfect for local testing or simple setups. Run it directly via `bazel run` or deploy using the default Helm single-node configuration. No external dependencies required.
 
 ```shell
 $ bazel run //cmd/gorego
@@ -29,6 +29,17 @@ $ helm install gorego \
   --set replicaCount=3 \
   --set config.backing_cache.target="grpc://bazel-remote:9092" \
   ./charts/gorego/
+```
+
+Run Bazel with the hostname or IP of the **goREgo** service as the remote executor, and specify either
+**goREgo** or your backing cache for the cache. Since the backing cache is authoritative, there is no need
+to use **goREgo** as your cache endpoint.
+
+```shell
+$ bazel test \
+  --remote_executor=grpc://gorego:9092 \
+  --remote_cache=grpc://bazel-remote:9092 \
+  //...
 ```
 
 ### *3\. go, REs, go differently\!*
