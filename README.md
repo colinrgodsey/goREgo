@@ -91,4 +91,4 @@ Standing on the shoulders of giants:
 The only vibe evoked was frustration. But Gemini was used for the initial research, implementation planning, and sub-system integration (with much human intervention, debugging, and review along the way). 
 This project was born from a high-level architecture and a set of requirements I gathered while exploring different Remote Execution
 solutions and fighting some of their complexity. Due to a real need for this solution and a lack of time, much of the work 
-was delegated to AI agents.
+was delegated to AI agents. The research, implementation phases/retros can be found in the [docs](./docs) folder.
