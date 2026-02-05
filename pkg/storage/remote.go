@@ -96,6 +96,16 @@ type readCloserWrapper struct {
 	io.Closer
 }
 
+type cancelCloser struct {
+	io.Closer
+	cancel context.CancelFunc
+}
+
+func (c *cancelCloser) Close() error {
+	c.cancel()
+	return c.Closer.Close()
+}
+
 func (s *RemoteStore) Get(ctx context.Context, digest Digest) (io.ReadCloser, error) {
 	var resourceName string
 	var err error
@@ -109,10 +119,13 @@ func (s *RemoteStore) Get(ctx context.Context, digest Digest) (io.ReadCloser, er
 		return nil, err
 	}
 
+	// Create a cancelable context to ensure stream closes if reader is closed
+	ctx, cancel := context.WithCancel(ctx)
 	stream, err := s.c.Read(ctx, &bytestream.ReadRequest{
 		ResourceName: resourceName,
 	})
 	if err != nil {
+		cancel()
 		return nil, err
 	}
 
@@ -135,16 +148,18 @@ func (s *RemoteStore) Get(ctx context.Context, digest Digest) (io.ReadCloser, er
 		}
 	}()
 
+	closer := &cancelCloser{Closer: pr, cancel: cancel}
+
 	if s.compression == "zstd" {
 		decoder, err := zstd.NewReader(pr)
 		if err != nil {
-			pr.Close()
+			closer.Close()
 			return nil, err
 		}
-		return &readCloserWrapper{Reader: decoder, Closer: pr}, nil
+		return &readCloserWrapper{Reader: decoder, Closer: closer}, nil
 	}
 
-	return pr, nil
+	return &readCloserWrapper{Reader: pr, Closer: closer}, nil
 }
 
 func (s *RemoteStore) Put(ctx context.Context, digest Digest, data io.Reader) error {
@@ -172,6 +187,7 @@ func (s *RemoteStore) Put(ctx context.Context, digest Digest, data io.Reader) er
 
 	if s.compression == "zstd" {
 		pr, pw := io.Pipe()
+		defer pr.Close()
 
 		// Run compressor in background
 		go func() {

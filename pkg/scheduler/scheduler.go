@@ -114,18 +114,13 @@ func (s *Scheduler) Enqueue(ctx context.Context, actionDigest *repb.Digest, skip
 	}
 
 	s.mu.Lock()
-	s.operations[name] = opStatus
-	s.mu.Unlock()
+	defer s.mu.Unlock()
 
 	// Non-blocking send to queue
 	select {
 	case s.taskQueue <- task:
-		// Queued successfully
+		s.operations[name] = opStatus
 	default:
-		// Queue is full
-		s.mu.Lock()
-		delete(s.operations, name)
-		s.mu.Unlock()
 		return nil, status.Error(codes.ResourceExhausted, "execution queue is full")
 	}
 

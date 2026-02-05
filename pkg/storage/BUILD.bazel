@@ -31,6 +31,7 @@ go_test(
     srcs = [
         "local_putfile_test.go",
         "local_test.go",
+        "remote_leak_test.go",
         "remote_test.go",
     ],
     embed = [":storage"],

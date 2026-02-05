@@ -4,6 +4,8 @@
 
 **goREgo** is a simplified, high-performance [Remote Execution](https://bazel.build/remote/rbe) implementation for Bazel (and other compatible build systems), built to strip away the complexity of existing solutions. It is designed to be lightweight, flexible, and ready to deploy—whether you are running on a single desktop or utilizing spare [Kubernetes](https://kubernetes.io/) resources.
 
+---
+
 ## **🚀 Deployment Modes**
 
 ### *1\. go, RE, go\!*
@@ -47,6 +49,8 @@ $ bazel test \
 Total control.  
 Full customization of the deployment via Helm and custom deploy containers.
 
+---
+
 ## **🏗 Architecture**
 
 **Making a complicated thing simple.**
@@ -74,10 +78,14 @@ How do we handle the load?
 * **Intelligent Routing:** Nodes utilize a lightweight gossip protocol (powered by [memberlist](https://github.com/hashicorp/memberlist)) to track the queue depth of their peers in real-time.
 * **The Mechanism:** Using this gossip data, a busy node identifies underutilized peers and actively **pushes** tasks to them, ensuring the cluster stays balanced without heavy centralized scheduling.
 
+---
+
 ## **🤔 "But clustering sounds hard..."**
 
 Good news: It's not necessary.  
 You can run **goREgo** locally as a single execution node. You don't even need the backing cache. This is perfect for the "Road Warrior" scenario where you just want to tap into your home build machine for fast builds.
+
+---
 
 # **💡 Inspiration**
 
@@ -86,6 +94,8 @@ Standing on the shoulders of giants:
 * **[Buildfarm](https://github.com/buildfarm/buildfarm) & [Buildbarn](https://github.com/buildbarn):** For paving the way and getting me started on my RE journey.
 * **[Just Execute](https://github.com/just-buildsystem/justbuild/blob/master/doc/tutorial/just-execute.org):** For the philosophy of simplicity.
 * **My Utility Room:** From a burning desire to abuse the old rackmount servers gathering dust in my basement.
+
+---
 
 ### *... was this vibe coded?*
 The only vibe evoked was frustration. But Gemini was used for the initial research, implementation planning, and sub-system integration (with much human intervention, debugging, and review along the way). 
