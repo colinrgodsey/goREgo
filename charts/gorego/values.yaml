@@ -10,7 +10,7 @@ image:
   repository: ghcr.io/colinrgodsey/gorego
   pullPolicy: IfNotPresent
   # Overrides the image tag whose default is the chart appVersion.
-  tag: "latest"
+  tag: "0.1"
 
 imagePullSecrets: []
 nameOverride: ""
