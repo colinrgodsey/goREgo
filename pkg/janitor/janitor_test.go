@@ -208,10 +208,6 @@ func TestJanitor_Debounce(t *testing.T) {
 		notifyCh:    make(chan struct{}, 1),
 	}
 
-	// Track cleanup calls
-	cleanupCount := 0
-	originalCleanup := j.Cleanup
-
 	// Start the Run loop in a goroutine
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 	defer cancel()
@@ -236,7 +232,4 @@ func TestJanitor_Debounce(t *testing.T) {
 	if len(mockFS.removedFiles) < 1 {
 		t.Errorf("Expected at least 1 file removed, got %d", len(mockFS.removedFiles))
 	}
-
-	_ = cleanupCount
-	_ = originalCleanup
 }

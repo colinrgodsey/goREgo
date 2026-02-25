@@ -2,6 +2,7 @@ package janitor
 
 import (
 	"context"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
@@ -118,6 +119,11 @@ func (j *Janitor) Run(ctx context.Context) error {
 			// Reset debounce timer on notification
 			if debounceTimer != nil {
 				debounceTimer.Stop()
+				// Drain the channel in case the timer already fired
+				select {
+				case <-debounceCh:
+				default:
+				}
 			}
 			debounceTimer = time.AfterFunc(j.debounceDur, func() {
 				select {
@@ -128,7 +134,7 @@ func (j *Janitor) Run(ctx context.Context) error {
 		case <-debounceCh:
 			// Debounce period elapsed, run cleanup
 			if err := j.Cleanup(); err != nil {
-				// Log error but continue
+				slog.Error("janitor cleanup failed", "error", err)
 			}
 		}
 	}

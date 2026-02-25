@@ -142,7 +142,16 @@ func (s *LocalStore) UpdateActionResult(ctx context.Context, digest Digest, resu
 		return err
 	}
 
-	return os.Rename(tmpPath, path)
+	if err := os.Rename(tmpPath, path); err != nil {
+		return err
+	}
+
+	// Notify callback that a new file was added (Action Cache entries count toward disk usage)
+	if s.onPutCallback != nil {
+		s.onPutCallback()
+	}
+
+	return nil
 }
 
 func (s *LocalStore) Put(ctx context.Context, digest Digest, data io.Reader) error {
