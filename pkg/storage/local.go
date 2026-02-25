@@ -13,10 +13,15 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+// OnPutCallback is called after a file is successfully added to the cache.
+// It is used to trigger cache management tasks like janitor cleanup.
+type OnPutCallback func()
+
 type LocalStore struct {
 	rootDir          string
 	forceUpdateATime bool
 	logger           *slog.Logger
+	onPutCallback    OnPutCallback
 }
 
 func NewLocalStore(rootDir string, forceUpdateATime bool) (*LocalStore, error) {
@@ -31,6 +36,12 @@ func NewLocalStore(rootDir string, forceUpdateATime bool) (*LocalStore, error) {
 		forceUpdateATime: forceUpdateATime,
 		logger:           slog.Default().With("component", "localstore"),
 	}, nil
+}
+
+// SetOnPutCallback sets a callback that is invoked after a file is
+// successfully added to the cache via Put or PutFile.
+func (s *LocalStore) SetOnPutCallback(cb OnPutCallback) {
+	s.onPutCallback = cb
 }
 
 func (s *LocalStore) BlobPath(digest Digest) (string, error) {
@@ -180,6 +191,11 @@ func (s *LocalStore) Put(ctx context.Context, digest Digest, data io.Reader) err
 		return fmt.Errorf("failed to make file read-only: %w", err)
 	}
 
+	// Notify callback that a new file was added
+	if s.onPutCallback != nil {
+		s.onPutCallback()
+	}
+
 	return nil
 }
 
@@ -259,6 +275,11 @@ func (s *LocalStore) PutFile(ctx context.Context, digest Digest, sourcePath stri
 
 	// No need for a final Chmod on `path` because `rename` preserves permissions,
 	// and we've already set `tmpPath` to 0444.
+
+	// Notify callback that a new file was added
+	if s.onPutCallback != nil {
+		s.onPutCallback()
+	}
 
 	return nil
 }

@@ -58,34 +58,75 @@ func (fs *stdFileSystem) Remove(path string) error {
 	return os.Remove(path)
 }
 
+// Janitor enforces disk usage limits on the local cache by performing
+// LRU eviction based on file access times. It runs cleanup only when
+// triggered by cache additions, with debouncing to avoid excessive I/O.
 type Janitor struct {
-	rootDir   string
-	maxSize   int64
-	minAge    time.Duration
-	checkFreq time.Duration
-	mu        sync.Mutex
-	fs        fileSystem
+	rootDir     string
+	maxSize     int64
+	minAge      time.Duration
+	debounceDur time.Duration
+	mu          sync.Mutex
+	fs          fileSystem
+
+	// notifyCh receives signals when files are added to the cache
+	notifyCh chan struct{}
 }
 
 func NewJanitor(cfg *config.Config) *Janitor {
 	return &Janitor{
-		rootDir:   cfg.LocalCache.Dir,
-		maxSize:   int64(cfg.LocalCache.MaxSizeGB) * 1024 * 1024 * 1024,
-		minAge:    30 * time.Second,
-		checkFreq: 1 * time.Minute,
-		fs:        &stdFileSystem{},
+		rootDir:     cfg.LocalCache.Dir,
+		maxSize:     int64(cfg.LocalCache.MaxSizeGB) * 1024 * 1024 * 1024,
+		minAge:      30 * time.Second,
+		debounceDur: 5 * time.Second,
+		fs:          &stdFileSystem{},
+		notifyCh:    make(chan struct{}, 1), // Buffered to allow non-blocking notify
 	}
 }
 
+// Notify signals that a new file has been added to the local cache,
+// triggering a debounced cleanup run. It is non-blocking and safe to
+// call from any goroutine.
+func (j *Janitor) Notify() {
+	select {
+	case j.notifyCh <- struct{}{}:
+	default:
+		// Notification already pending, skip
+	}
+}
+
+// OnPut returns a callback function suitable for use with LocalStore's
+// OnPutCallback. The callback triggers a debounced cleanup when files
+// are added to the cache.
+func (j *Janitor) OnPut() func() {
+	return j.Notify
+}
+
 func (j *Janitor) Run(ctx context.Context) error {
-	ticker := time.NewTicker(j.checkFreq)
-	defer ticker.Stop()
+	// Debounce timer - reset on each notification
+	var debounceTimer *time.Timer
+	debounceCh := make(chan time.Time, 1)
 
 	for {
 		select {
 		case <-ctx.Done():
+			if debounceTimer != nil {
+				debounceTimer.Stop()
+			}
 			return ctx.Err()
-		case <-ticker.C:
+		case <-j.notifyCh:
+			// Reset debounce timer on notification
+			if debounceTimer != nil {
+				debounceTimer.Stop()
+			}
+			debounceTimer = time.AfterFunc(j.debounceDur, func() {
+				select {
+				case debounceCh <- time.Now():
+				default:
+				}
+			})
+		case <-debounceCh:
+			// Debounce period elapsed, run cleanup
 			if err := j.Cleanup(); err != nil {
 				// Log error but continue
 			}
