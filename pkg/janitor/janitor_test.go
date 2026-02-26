@@ -1,6 +1,7 @@
 package janitor
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"testing"
@@ -133,5 +134,102 @@ func TestJanitor_NoCleanupNeeded(t *testing.T) {
 
 	if len(mockFS.removedFiles) != 0 {
 		t.Errorf("Expected no files removed, got %v", mockFS.removedFiles)
+	}
+}
+
+func TestJanitor_Notify(t *testing.T) {
+	j := &Janitor{
+		rootDir:     "/cache",
+		maxSize:     1000,
+		debounceDur: 10 * time.Millisecond,
+		fs:          newMockFileSystem(),
+		notifyCh:    make(chan struct{}, 1),
+	}
+
+	// Test that Notify is non-blocking
+	j.Notify()
+	j.Notify() // Second call should not block (buffered channel)
+
+	// Verify notification is in the channel
+	select {
+	case <-j.notifyCh:
+		// Expected
+	default:
+		t.Error("Expected notification in channel")
+	}
+
+	// Verify channel is empty (second notify was dropped due to buffer)
+	select {
+	case <-j.notifyCh:
+		t.Error("Did not expect second notification")
+	default:
+		// Expected
+	}
+}
+
+func TestJanitor_OnPut(t *testing.T) {
+	j := &Janitor{
+		rootDir:     "/cache",
+		maxSize:     1000,
+		debounceDur: 10 * time.Millisecond,
+		fs:          newMockFileSystem(),
+		notifyCh:    make(chan struct{}, 1),
+	}
+
+	callback := j.OnPut()
+	if callback == nil {
+		t.Fatal("OnPut returned nil callback")
+	}
+
+	// Call the callback
+	callback()
+
+	// Verify notification was triggered
+	select {
+	case <-j.notifyCh:
+		// Expected
+	case <-time.After(100 * time.Millisecond):
+		t.Error("Callback did not trigger notification")
+	}
+}
+
+func TestJanitor_Debounce(t *testing.T) {
+	mockFS := newMockFileSystem()
+	now := time.Now()
+	mockFS.addFile("file1", 100, now.Add(-1*time.Hour))
+	mockFS.addFile("file2", 200, now.Add(-30*time.Minute))
+
+	j := &Janitor{
+		rootDir:     "/cache",
+		maxSize:     150, // Should remove file1 to get under limit
+		minAge:      1 * time.Millisecond,
+		debounceDur: 50 * time.Millisecond,
+		fs:          mockFS,
+		notifyCh:    make(chan struct{}, 1),
+	}
+
+	// Start the Run loop in a goroutine
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_ = j.Run(ctx)
+	}()
+
+	// Send multiple notifications rapidly
+	j.Notify()
+	time.Sleep(10 * time.Millisecond)
+	j.Notify()
+	time.Sleep(10 * time.Millisecond)
+	j.Notify()
+
+	// Wait for Run to complete
+	<-done
+
+	// Check that cleanup happened (at least one file should be removed)
+	if len(mockFS.removedFiles) < 1 {
+		t.Errorf("Expected at least 1 file removed, got %d", len(mockFS.removedFiles))
 	}
 }

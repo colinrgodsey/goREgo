@@ -184,8 +184,11 @@ func main() {
 		}
 
 		// 2. Janitor (only needed if local cache is enabled)
+		jan := janitor.NewJanitor(cfg)
+		localStore.SetOnPutCallback(jan.OnPut())
+
 		g.Go(func() error {
-			if err := janitor.NewJanitor(cfg).Run(ctx); err != nil {
+			if err := jan.Run(ctx); err != nil {
 				if !errors.Is(err, context.Canceled) {
 					return err
 				}
