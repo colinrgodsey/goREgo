@@ -2,6 +2,7 @@ package janitor
 
 import (
 	"context"
+	"io/fs"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -28,12 +29,13 @@ type fileSystem interface {
 type stdFileSystem struct{}
 
 type stdFileEntry struct {
-	info os.FileInfo
+	info  os.FileInfo
+	entry fs.DirEntry
 }
 
-func (e *stdFileEntry) Name() string { return e.info.Name() }
+func (e *stdFileEntry) Name() string { return e.entry.Name() }
+func (e *stdFileEntry) IsDir() bool  { return e.entry.IsDir() }
 func (e *stdFileEntry) Size() int64  { return e.info.Size() }
-func (e *stdFileEntry) IsDir() bool  { return e.info.IsDir() }
 func (e *stdFileEntry) AccessTime() time.Time {
 	atime := e.info.ModTime()
 	if stat, ok := e.info.Sys().(*syscall.Stat_t); ok {
@@ -42,17 +44,21 @@ func (e *stdFileEntry) AccessTime() time.Time {
 	return atime
 }
 
-func (fs *stdFileSystem) Walk(root string, fn func(path string, info fileEntry, err error) error) error {
-	return filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
-		var entry fileEntry
-		if info != nil {
-			entry = &stdFileEntry{info: info}
+func (sfs *stdFileSystem) Walk(root string, fn func(path string, info fileEntry, err error) error) error {
+	return filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
+		var fentry fileEntry
+		if entry != nil {
+			info, infoErr := entry.Info()
+			if infoErr != nil {
+				return fn(path, nil, infoErr)
+			}
+			fentry = &stdFileEntry{info: info, entry: entry}
 		}
-		return fn(path, entry, err)
+		return fn(path, fentry, err)
 	})
 }
 
-func (fs *stdFileSystem) Remove(path string) error {
+func (sfs *stdFileSystem) Remove(path string) error {
 	// Best-effort attempt to make the file writable before removing.
 	// This is because the storage layer now marks files as read-only.
 	_ = os.Chmod(path, 0644)
