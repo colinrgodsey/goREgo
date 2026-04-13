@@ -2,11 +2,15 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "execution",
-    srcs = ["worker.go"],
+    srcs = [
+        "persistent.go",
+        "worker.go",
+    ],
     importpath = "github.com/colinrgodsey/goREgo/pkg/execution",
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/config",
+        "//pkg/execution/worker_protocol",
         "//pkg/sandbox",
         "//pkg/scheduler",
         "//pkg/storage",
@@ -28,6 +32,7 @@ go_test(
     name = "execution_test",
     srcs = [
         "hardlink_test.go",
+        "persistent_test.go",
         "sandbox_integration_test.go",
         "worker_test.go",
     ],
@@ -38,6 +43,7 @@ go_test(
     embed = [":execution"],
     deps = [
         "//pkg/config",
+        "//pkg/execution/worker_protocol",
         "//pkg/scheduler",
         "//pkg/storage",
         "@com_github_bazelbuild_remote_apis//build/bazel/remote/execution/v2:remote_execution_go_proto",
